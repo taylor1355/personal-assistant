@@ -48,23 +48,9 @@ The agent container has no write credentials to anything. Compromise of the agen
 
 ## The proposal queue
 
-The central invariant. Every write flows through it.
+The central invariant. Every write flows through it. See [PROPOSAL_FORMAT.md](PROPOSAL_FORMAT.md) for the full file format, frontmatter schema, registered action types, and validation rules.
 
-**Proposal format:** a markdown file in `<agent-vault>/00 - Assistant/Proposals/YYYY-MM-DD-HHMM-<slug>.md`, with frontmatter:
-
-```yaml
----
-proposed_at: 2026-04-24T09:15:00-04:00
-agent: journal_agent
-action: vault_edit
-target: 02 - Todos/01 - Short Term Todos.md
-status: pending   # pending | approved | rejected | applied | failed
----
-```
-
-Body: a human-readable description of the proposed change, the diff preview, and any reasoning. The user approves by editing the frontmatter (`status: approved`) or checking a box — the exact approval mechanism is TBD but will be one round-trip in Obsidian.
-
-**Executor loop:** watches the proposals folder; when a file transitions to `approved`, validates (schema check, target-file existence, diff applies cleanly), executes via the typed adapter for `action`, and transitions to `applied` or `failed` with a result block appended. Applied proposals are moved to `00 - Assistant/Proposals/Applied/YYYY-MM/` monthly.
+**Shape in one paragraph:** the agent writes a markdown file to `<agent-vault>/00 - Assistant/Proposals/YYYY-MM-DD-HHMM-<slug>.md` with frontmatter declaring `action`, `target`, and `status: pending`. The user reviews the file in Obsidian and approves by flipping `status` to `approved`. The executor watches the folder, validates the proposal against its schema, executes via the typed adapter for `action`, and transitions to `applied` or `failed` with a result block appended. Applied proposals are moved to `00 - Assistant/Proposals/Applied/YYYY-MM/` monthly.
 
 **Why markdown files instead of a queue service:** the user reviews them in Obsidian directly. No separate UI, no separate database, no round-trip through another tool. The vault is the queue.
 
