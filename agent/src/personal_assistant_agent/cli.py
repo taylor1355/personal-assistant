@@ -5,6 +5,7 @@ from pathlib import Path
 
 import typer
 
+from personal_assistant_agent.agents.root import handle_wake
 from personal_assistant_agent.models import (
     Action,
     Mode,
@@ -20,13 +21,36 @@ app = typer.Typer(add_completion=False, no_args_is_help=True)
 @app.command()
 def wake(
     reason: str = typer.Option(..., "--reason", help="Why the agent is waking up."),
+    vault_root: Path | None = typer.Option(
+        None, "--vault-root", envvar="VAULT_ROOT",
+        help="Vault copy root. Defaults to /data/vault or VAULT_ROOT env.",
+    ),
+    proposals_dir: Path | None = typer.Option(
+        None, "--proposals-dir", envvar="PROPOSALS_PATH",
+        help="Where to write proposal files.",
+    ),
+    timezone_name: str | None = typer.Option(
+        None, "--timezone", envvar="USER_TIMEZONE",
+        help="IANA zone name for computing today's journal section.",
+    ),
 ) -> None:
     """Wake the agent with a named trigger.
 
-    v0 entrypoint. The root agent is not yet wired; this prints the trigger
-    and exits. Real dispatch lands in the next commit.
+    v0: every wake invokes the journal_agent subagent. Requires
+    ``ANTHROPIC_API_KEY`` in the environment.
     """
-    typer.echo(f"agent: wake reason={reason!r} — root not yet implemented")
+    written = handle_wake(
+        reason,
+        vault_root=vault_root,
+        proposals_dir=proposals_dir,
+        timezone_name=timezone_name,
+    )
+    if not written:
+        typer.echo(f"agent: wake reason={reason!r} — no proposals emitted")
+        return
+    typer.echo(f"agent: wake reason={reason!r} — {len(written)} proposal(s):")
+    for path in written:
+        typer.echo(f"  {path}")
 
 
 @app.command()
