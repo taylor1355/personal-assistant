@@ -1,4 +1,32 @@
 .claude/settings.local.json
+
+# Environment
 .env
 .env.*
 !.env.example
+
+# Per-user config (only examples are committed)
+config/user.yaml
+config/providers.yaml
+
+# Local state
+var/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+build/
+*.egg-info/
+
+# Go
+*.test
+*.out
+
+# IDE
+.idea/
+.vscode/

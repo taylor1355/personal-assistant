@@ -1,0 +1,21 @@
+services:
+  agent:
+    build:
+      context: ./agent
+    image: personal-assistant/agent:dev
+    env_file:
+      - .env
+    volumes:
+      # Agent's copy of the user's vault. The sync service (running on the
+      # host) keeps this in two-way sync with the real vault. The agent
+      # never touches the real vault directly.
+      - ${VAULT_COPY_PATH:-./var/vault-copy}:/data/vault
+      # Proposals are written here; the executor (running on the host)
+      # consumes them.
+      - ${PROPOSALS_PATH:-./var/proposals}:/data/proposals
+      - ./agent/configs:/etc/agent:ro
+      - ./config:/etc/shared:ro
+    # Default entrypoint is the CLI; `docker compose run agent wake ...`.
+    entrypoint: ["personal-assistant-agent"]
+    # No ports — the agent is a command-line daemon woken by host-side
+    # triggers, not a server.

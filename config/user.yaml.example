@@ -1,0 +1,35 @@
+# Copy to config/user.yaml and fill in. Per-user configuration; not committed.
+
+user:
+  name: Taylor
+  timezone: America/New_York
+  # SMS number the assistant texts; not used in v0.
+  phone: ""
+
+vault:
+  # Where the agent's vault copy is mounted inside the container.
+  path: /data/vault
+  # Root folder for assistant-owned content. Sorts above the user's
+  # numbered folders.
+  assistant_root: "00 - Assistant"
+
+proposals:
+  # Where proposals are written (inside the container).
+  path: /data/proposals
+  # Transition values the executor watches for. The agent writes `pending`;
+  # the user flips to `approved` or `rejected`.
+  statuses:
+    initial: pending
+    approve: approved
+    reject: rejected
+    applied: applied
+    failed: failed
+
+subagents:
+  # Enable/disable subagents. v0 only uses journal.
+  journal: true
+  calendar: false
+  email: false
+  vault_organizer: false
+  research: false
+  reading: false
