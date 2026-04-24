@@ -23,7 +23,9 @@ dependencies = [
   "watchfiles>=0.22",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
+# PEP 735. `uv sync` installs the `dev` group by default; pass `--no-dev`
+# to get a production-only env.
 dev = [
   "pytest>=8",
   "pytest-asyncio>=0.23",
