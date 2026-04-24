@@ -30,3 +30,8 @@ build/
 # IDE
 .idea/
 .vscode/
+
+# One-off installers and local scripts
+install-pyenv-win.ps1
+*.local.sh
+*.local.ps1
