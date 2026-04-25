@@ -1,188 +1,256 @@
 # Architecture
 
-This document describes the design of `personal-assistant`. It is a reference for the repo's author and anyone forking the project. The shape is considered stable; specific tools, subagents, and config keys will change as the MVP is built.
+Reference for the design of `personal-assistant`. The shape is considered stable; specific tools, subagents, and config keys evolve as work progresses.
+
+Linked specs:
+- [PROPOSAL_FORMAT.md](PROPOSAL_FORMAT.md) — proposal file schema
+- [BUDGET.md](BUDGET.md) — token spend caps and self-throttling
+- [LINEAR_CONVENTIONS.md](LINEAR_CONVENTIONS.md) — labels, priorities, states, issue templates
+- [VAULT_ORGANIZATION.md](VAULT_ORGANIZATION.md) — Obsidian Bases views, frontmatter schemas, vault-organizer agent's playbook
+- [DEVOPS.md](DEVOPS.md) — v2 capability: agent-authored PRs to user's repos
 
 ## Design principles
 
-1. **Writes go through a proposal queue.** The agent never mutates vault files, calendar entries, emails, or any external state directly. It emits structured proposals; a separate process, outside the agent's container, applies them only after the user approves.
-2. **Agentic orchestration.** A root agent routes to subagents and tools per request. No fixed DAG — the same trigger may invoke different subagents depending on context.
-3. **Event-driven, not polling.** The agent is a daemon that sleeps and wakes only on specific triggers. Each wake runs to completion with its trigger in context, then sleeps again.
-4. **Obsidian is the primary interface.** The vault is the assistant's inbox, scratchpad, and output surface. SMS is secondary.
-5. **Configurable provider routing.** Model selection is a config concern; the code path is provider-agnostic wherever a model-specific feature isn't needed.
-6. **Decoupled vault.** The agent works on its own copy of the vault inside its container. A sync daemon bridges that copy to the user's working vault.
-7. **Reusable with opinionated defaults.** Onboarding a different user is a config change — paths, accounts, phone, provider mix — not a code change.
+1. **Writes go through a proposal queue.** The agent never mutates user state directly. Structured proposals are emitted; a separate executor on the host applies them. Some Linear ops are auto-approved (still logged) — see "Approval gates" below.
+2. **Agentic orchestration.** A root agent routes per-trigger to specialist subagents and tools. No fixed pipeline.
+3. **Event-driven, debounced.** The agent sleeps and wakes on triggers. A host-side dispatcher batches events with a quiet-period / max-delay / max-buffer policy, then invokes the agent with the batch in context.
+4. **Value-prioritized wake.** Every wake asks "what's the most valuable thing I can do right now?" Three tiers: time-sensitive obligations, advanceable user interests, long-horizon backburner. No idle/active distinction; just ranking.
+5. **Token-budgeted.** Daily and weekly hard caps; soft target lower. Tier-1 work can exceed the soft cap; only hard caps block.
+6. **Linear and Obsidian serve distinct purposes; no mirror.** Linear is the issue tracker; vault is knowledge + working notes. Each is first-class for its purpose.
+7. **Configurable provider routing.** Model selection is a config concern; code paths are provider-agnostic except where a model-specific feature justifies a branch.
+8. **Decoupled vault.** The agent works on its own copy of the vault inside its container. A sync daemon bridges that copy to the user's working vault.
+9. **Reusable with opinionated defaults.** Onboarding a different user is config — not code.
+
+## Capability tiers
+
+The system grows in capability tiers. Each is shippable on its own; later tiers depend on earlier ones.
+
+| Tier | Capability | Blocking dependencies |
+|---|---|---|
+| **v0** | Proposal loop end-to-end. Manual `wake` triggers a single subagent (`journal_agent`) that detects completed todos and emits proposals. | none — landed |
+| **v1** | The "useful daily" version. Inbox + SMS as unified capture+command, debounced dispatcher, intake agent, value-prioritized root, Linear backbone, vault-organizer with Bases views, daily digest. | v0 |
+| **v2** | Agent-authored dev work. Picks up code-typed Linear issues, works in worktrees, runs tests, submits PRs to allowed repos. | v1 |
+| **v3+** | Open. Things that emerge from running v1+v2 — likely calendar/email writes, multi-repo dev, scheduled R&D programs. | v1, v2 |
 
 ## Components
 
-Four services, running in three trust zones.
+Six services, three trust zones.
 
 ```
 ┌─ container (untrusted; read-only creds, network-isolated) ─────────┐
 │  agent        Python + NeMo Agent Toolkit                          │
-│                - root agent + subagents + tools                    │
-│                - read-only: Gmail, Calendar, vault (agent copy)    │
-│                - emits proposals, never mutates anything           │
-│                - calls local Ollama + cloud LLM APIs               │
+│                - root + subagents + tools                          │
+│                - read-only: Gmail, Calendar, vault copy            │
+│                - emits proposals; some Linear ops auto-applied     │
+│                  via tools/linear (still logged as proposals)      │
+│                - calls Anthropic / OpenRouter / Ollama per config  │
 └────────────────────────────────────────────────────────────────────┘
                            │
-                           │ (proposals: filesystem or localhost HTTP)
+                           │ (proposals: filesystem)
                            ▼
 ┌─ host (trusted; holds write credentials) ──────────────────────────┐
-│  executor    Go                                                    │
-│                - reads approved proposals                          │
-│                - validates + applies (vault / calendar / email)    │
-│                - audit log                                         │
+│  executor    Go     applies approved vault/calendar/email writes;  │
+│                     records audit log of every applied proposal    │
 │                                                                    │
-│  sms         Go                                                    │
-│                - Twilio webhook in / REST out                      │
-│                - forwards inbound to agent, delivers outbound      │
-│                - behind Cloudflare Tunnel                          │
+│  dispatcher  Go     watches triggers (file-watch, cron, webhooks); │
+│                     debounces per-source (quiet/max-delay/buffer); │
+│                     invokes agent CLI with batched context         │
 │                                                                    │
-│  sync        Go                                                    │
-│                - two-way sync: user vault ↔ container-mounted copy │
-│                - debounced; conflict-aware                         │
+│  sms         Go     Twilio webhook in / REST out; behind           │
+│                     Cloudflare Tunnel                              │
+│                                                                    │
+│  sync        Go     two-way sync: user vault ↔ agent's copy        │
+│                                                                    │
+│  devops      Go     v2: GitHub PR submission for dev-typed Linear  │
+│                     issues; holds GITHUB_TOKEN; sandboxed by repo  │
+│                     allowlist                                      │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-The agent container has no write credentials to anything. Compromise of the agent can corrupt its own scratchpad but cannot send email, mutate calendar, or write to the user's real vault.
+The agent container has no write credentials to GitHub, Gmail, Calendar, the user's real vault, or Twilio. Compromise of the agent corrupts its own scratchpad and consumes API tokens — nothing else.
 
 ## The proposal queue
 
-The central invariant. Every write flows through it. See [PROPOSAL_FORMAT.md](PROPOSAL_FORMAT.md) for the full file format, frontmatter schema, registered action types, and validation rules.
+The central invariant for irreversible mutation. See [PROPOSAL_FORMAT.md](PROPOSAL_FORMAT.md) for the file format and validation rules.
 
-**Shape in one paragraph:** the agent writes a markdown file to `<agent-vault>/00 - Assistant/Proposals/YYYY-MM-DD-HHMM-<slug>.md` with frontmatter declaring `action`, `target`, and `status: pending`. The user reviews the file in Obsidian and approves by flipping `status` to `approved`. The executor watches the folder, validates the proposal against its schema, executes via the typed adapter for `action`, and transitions to `applied` or `failed` with a result block appended. Applied proposals are moved to `00 - Assistant/Proposals/Applied/YYYY-MM/` monthly.
+**Shape:** the agent writes a markdown file under `00 - Assistant/Proposals/YYYY-MM-DD-HHMM-<slug>.md` with frontmatter declaring `action`, `target`, and `status: pending`. The user reviews in Obsidian and approves by flipping `status` to `approved`. The executor watches the folder, validates, applies via the typed adapter, and transitions to `applied` or `failed`. Applied proposals are moved to `Proposals/Applied/YYYY-MM/`.
 
-**Why markdown files instead of a queue service:** the user reviews them in Obsidian directly. No separate UI, no separate database, no round-trip through another tool. The vault is the queue.
+**Why markdown:** the user reviews in Obsidian directly. No extra UI, no extra database. The vault is the queue.
+
+### Approval gates
+
+Not every operation goes through user-approval. Some operations have low blast radius and clear undo (Linear status transitions, comments) so gating them is friction without safety benefit. Every action type is classified:
+
+| Class | Examples | Path |
+|---|---|---|
+| **User-gated** (default) | `vault_edit`, `vault_create`, `vault_delete`, `calendar_*`, `email_*`, `linear_delete_issue`, `linear_transition_to_cancelled`, `linear_bulk_op` (>5 issues) | proposal → user approves → executor applies |
+| **Auto-applied** | `linear_create_issue`, `linear_update_issue`, `linear_transition_forward`, `linear_set_priority`, `linear_set_labels`, `linear_set_assignee`, `linear_add_comment`, `linear_link_blocker` | proposal → executor applies immediately → file lands in `Proposals/Applied/` (still auditable) |
+
+Auto-applied proposals are still emitted as files so the user has a complete audit log of what the agent did. The user can disable auto-apply per-class in `config/user.yaml` if they want everything gated.
 
 ## Event-driven wakes
 
-The agent sleeps between triggers. Trigger types:
+The agent sleeps between triggers. Triggers are debounced by a host-side dispatcher.
 
-| Trigger | Source | Cadence |
+### Trigger types
+
+| Trigger | Source | Default cadence |
 |---|---|---|
-| inbox edit | file-watcher on `00 - Assistant/Inbox.md` (or `/Inbox/*.md`) | immediate debounced |
-| email batch | scheduled poll that wakes the agent only if ≥1 new email | ~30 min |
-| sms inbound | Twilio webhook → sms service → agent | immediate |
-| scheduled | cron-like: morning brief, end-of-day reconciliation, dated-plan check | per-job |
+| `inbox_edit` | file-watch on `00 - Assistant/Inbox.md` (and `Inbox/*.md` if used) | quiet 5 min, max delay 15 min, max 10 events |
+| `sms_inbound` | Twilio webhook → sms service | quiet 1 min, max delay 5 min, max 5 messages |
+| `email_batch` | scheduled poll of Gmail; only triggers if ≥1 new since last wake | every 30 min |
+| `scheduled` | cron entries (morning brief, evening reconcile, dated-plan check) | per-job |
+| `idle_pulse` | cron, periodic; triggers a value-prioritized wake even with no events | every 1 hr |
 
-Each wake receives the trigger event in context. The agent plans, possibly invokes subagents, emits proposals, possibly sends SMS, writes a session log, and exits. No long-running main loop.
+### Debounced dispatcher
 
-**Session logs** go to `00 - Assistant/Sessions/YYYY-MM/YYYY-MM-DD-HHMM.md`, following the `claude_partner` pattern (see "prior art" below): what was the trigger, what the agent did, what proposals were emitted, "recommended first action" for next time if relevant.
+The `dispatcher` service holds per-source state and fires when **any** condition trips:
+- `now - last_event ≥ quiet_period`
+- `now - pending_since ≥ max_delay`
+- `buffer_size ≥ max_buffer`
+
+All three are per-source, configurable in `config/user.yaml`. The dispatcher invokes `personal-assistant-agent wake --reason=<source> --payload <json>` with the batch.
+
+### Value-prioritized wake model
+
+Every wake the root agent ranks possible actions and picks the highest-value tier:
+
+1. **Time-sensitive obligations** — SMS replies owed, imminent calendar items, todo completions to detect, urgent Linear issues approaching deadlines.
+2. **Advanceable user interests** — top of Linear backlog (issues in `Todo`, ranked by priority), in-progress issues that can take a step forward, vault-organization opportunities (a folder needing frontmatter to enable Bases queries).
+3. **Long-horizon backburner** — research projects, exploratory work, R&D efforts the user has filed.
+
+Tier-1 work can run over the soft budget; only the daily/weekly hard cap blocks. Tier-2 and Tier-3 self-throttle. See [BUDGET.md](BUDGET.md).
+
+### Session logs
+
+Each wake writes to `00 - Assistant/Sessions/YYYY-MM/YYYY-MM-DD-HHMM.md`: trigger, batched events, planning summary, subagents invoked, proposals emitted, Linear ops performed, "recommended first action" for next session. Modeled on the `claude_partner` pattern.
 
 ## Agent shape
 
-Root agent + dispatchable subagents + shared tools, running on NeMo Agent Toolkit.
+Root agent dispatching to specialist subagents. NeMo Agent Toolkit is the framework; routing is dynamic per-trigger and per-context.
 
-**Root agent** receives the trigger and decides which subagents/tools to invoke. It does not do domain work itself.
+### Subagents
 
-**Subagents** (planned, in rough priority order):
+| Subagent | Reads | Emits | Triggers it serves |
+|---|---|---|---|
+| `intake_agent` | inbox / SMS content | classifies into journal/todo/plan/calendar/research_request/instruction; routes to other subagents OR emits proposals directly | `inbox_edit`, `sms_inbound` |
+| `journal_agent` | today's journal section, todos | proposals to mark todos done | scheduled, on-demand from intake |
+| `calendar_agent` | Google Calendar (read-only) | proposals to create events, conflict warnings, dated-plan reminders | `email_batch`, scheduled |
+| `email_agent` | Gmail (read-only) | proposals to draft replies, label, archive | `email_batch` |
+| `vault_organizer` | full vault | proposals to add frontmatter, create Bases views, restructure folders, write MOCs | scheduled, idle pulses |
+| `research_agent` | web (via search tool) + Linear backlog | proposals to write/extend research notes; updates issue status | tier-2/3 wakes when research issues are top-ranked |
+| `reading_agent` | Goodreads API + vault literature notes | proposals to update reading list, draft notes | scheduled |
+| `linear_agent` | Linear (read+write) | tactical Linear ops (status transitions, label updates) — used by other subagents, not user-facing | invoked by other subagents |
+| `pm_agent` | Linear backlog + recent activity | strategic proposals: triage Triage state, label/prioritize, create issues for newly-discovered work | scheduled (daily triage) |
+| `devops_agent` (v2) | repo, Linear issue, code | git worktree, code, tests, PR | tier-2 wake when a code-typed issue is top-ranked |
 
-- `journal_agent` — reads today's journal, detects completed todos, proposes edits
-- `calendar_agent` — reads Calendar, detects conflicts, proposes events, powers dated-plan reminders
-- `email_agent` — reads Gmail, summarizes, triages, proposes replies / labels
-- `vault_organizer` — proposes frontmatter, tags, MOCs, link structure; incremental vault improvement
-- `research_agent` — multi-step web research on a topic
-- `reading_agent` — Goodreads ↔ vault sync
+### Shared tools
 
-**Shared tools** (planned):
-
-- `vault_read` — read any file in the agent's vault copy
-- `proposal_enqueue` — write a proposal file
-- `memory_query` — retrieve from scored memory (similarity + importance + recency, per the `mind` project's pattern)
-- `web_search` — for research
-- `sms_send` — enqueue an outbound SMS (the sms service delivers)
+| Tool | Purpose |
+|---|---|
+| `vault_read` | UTF-8 read under the vault root with traversal protection |
+| `proposal_enqueue` | write a structured proposal file |
+| `linear_cli` | wrapper around `tools/linear` (TS-based, lifted from npc-simulation): list/get/create/update/transition/link |
+| `web_search` | for research_agent |
+| `sms_send` | enqueue outbound SMS via the sms service |
+| `memory_query` | scored retrieval over agent's session logs and knowledge files (similarity + importance + recency) |
 
 ## Provider routing
 
-A single provider abstraction speaks the OpenAI API surface. It routes by task class, configured in `config/providers.yaml`:
+A provider abstraction speaks the OpenAI API surface. Routes by task class, configured in `config/providers.yaml`. Native SDKs (Anthropic, Google) are used only when a model-specific feature justifies the branch — prompt caching, extended thinking, long-context, native tool use.
 
 ```yaml
-default: local-fast
-overrides:
-  research_agent: cloud-strong
-  vault_organizer: local-strong
-  root: cloud-fast
+routing:
+  default: cloud-strong
+  overrides:
+    intake_agent: cloud-fast      # high-frequency, lighter task
+    research_agent: cloud-strong  # quality matters
+    vault_organizer: local-strong # bulk frontmatter work; cheap and private
+    pm_agent: cloud-strong        # strategic decisions
 
 providers:
-  local-fast:   { base_url: "http://ollama:11434/v1", model: "llama3.1:8b" }
-  local-strong: { base_url: "http://ollama:11434/v1", model: "qwen2.5:32b-instruct-q5_K_M" }
-  cloud-fast:   { base_url: "https://openrouter.ai/api/v1", model: "..." }
-  cloud-strong: { native: "anthropic", model: "claude-opus-4-7" }
+  cloud-strong:  { kind: anthropic, model: claude-opus-4-7 }
+  cloud-fast:    { kind: openai_compat, base_url: https://openrouter.ai/api/v1, model: anthropic/claude-haiku-4-5 }
+  local-strong:  { kind: openai_compat, base_url: http://host.docker.internal:11434/v1, model: qwen2.5:32b-instruct-q5_K_M }
+  local-fast:    { kind: openai_compat, base_url: http://host.docker.internal:11434/v1, model: llama3.1:8b }
 ```
 
-Native SDKs (Anthropic, Google) are used only when a model-specific feature justifies the branch — prompt caching, extended thinking, long-context modes. Everything else goes through OpenAI-compat.
-
-A **target GPU** of 24GB (RTX 4090) means practical local options include Qwen 32B at Q4-Q5 for complex routing and 7-8B class at FP16 for fast tasks. The router does not load models; it relies on Ollama's model swap.
+Hardware target (RTX 4090, 24GB) supports Qwen 32B at Q4-Q5 for `local-strong` and 7-8B FP16 for `local-fast`. The router does not load models; it relies on Ollama's swap.
 
 ## Vault handling
 
-**Two copies:**
+**Two copies, one-way reads + bidirectional writes scoped to `00 - Assistant/`:**
 
-- User's working vault — canonical. The agent never touches it directly.
-- Agent's vault copy — lives in the container. Full read + write, but only for the `00 - Assistant/` subtree.
+- User's working vault — canonical. The agent and executor never mutate content outside `00 - Assistant/` without going through a user-approved proposal.
+- Agent's vault copy in the container — full read; writes are scoped to `00 - Assistant/` (sessions, knowledge, digest, proposals). The executor (host-side) is what writes to the real vault.
 
-The `sync` service maintains a two-way sync of `00 - Assistant/` and a read-only copy of everything else:
+The `sync` service reconciles between them with debounced two-way sync. Conflicts within `00 - Assistant/` resolve by timestamp with a dated backup. In practice, the proposal-queue pattern means conflicts are rare.
 
-- User's edits outside `00 - Assistant/` → agent's copy (the agent sees them read-only).
-- User's edits inside `00 - Assistant/` → agent's copy (this is how approvals and inbox edits reach the agent).
-- Agent's writes to `00 - Assistant/` → user's vault (via the executor; the sync daemon carries them back).
-- Executor writes outside `00 - Assistant/` (e.g., appending to the current year's journal, editing the todos file) → user's vault directly; sync picks them up on the next cycle.
+### Vault organization is first-class work
 
-Conflicts are resolved by timestamp with a dated backup of the losing side. In practice, the proposal-queue pattern means the agent and user rarely edit the same file at the same time.
+The vault's lack of frontmatter, tags, and structured properties is a weakness the user actively wants fixed. The `vault_organizer` subagent treats this as ongoing work: incremental proposals to add frontmatter to existing notes, create Bases views (`.base` files) for natural queries, write MOCs (Maps of Content), and propose folder restructuring. Bases is Obsidian's native (since 1.9) frontmatter-driven view system; once notes carry properties, Bases gives the user organizational dashboards over their own content. Full schema and view library in [VAULT_ORGANIZATION.md](VAULT_ORGANIZATION.md).
 
-**Respecting the vault's shape.** Most of the user's notes carry no frontmatter or tags; metadata lives in folder and filename conventions (PARA-like numbered folders, year-collated journals, `YYYY-MM-DD <slug>.md` plan files, category-bulleted todo files). When the assistant writes NEW content, it follows those conventions. When it IMPROVES organization — adding frontmatter, tags, MOCs — it does so through the proposal queue so the user drives the migration.
+This is distinct from issue tracking — Linear handles tasks/issues; the vault is knowledge and working notes. The two do not mirror each other.
+
+## Linear integration
+
+Linear is the issue tracker for everything: life tasks, R&D backlog, dev work. Conventions in [LINEAR_CONVENTIONS.md](LINEAR_CONVENTIONS.md). The agent works through `tools/linear` (bash + TS, lifted from npc-simulation with `link`/`unlink` added).
+
+### Two-layer agent pattern
+
+- **`linear_agent`** is the tactical interface — executes ops, no judgment. Other subagents call it.
+- **`pm_agent`** is strategic — proposes triage decisions, label changes, priority adjustments, issue creation from observed work. Operates on its own schedule (daily triage).
+
+This naturally implements the auto-approve-mechanical / gate-strategic split: tactical lifecycle ops (`linear_agent`'s domain) are auto-applied; strategic decisions (`pm_agent`'s output) flow through the proposal queue.
+
+### Issue ownership lifecycle
+
+Lifted from npc-simulation's `/work` skill: when the agent picks up an issue, it auto-transitions `Todo → In Progress`. On completion (proposal applied OR PR merged for dev work), it auto-transitions `In Progress → Done`. Stale `In Progress` issues (no movement in N days) auto-revert to `Todo` so the backlog stays accurate. All three are auto-approved.
+
+### No mirror in vault
+
+Linear has its own UI; the vault does not reproduce issue lists. The agent reads Linear via `tools/linear` whenever it needs current state; the vault's role is knowledge + working notes (`00 - Assistant/Sessions/`, `00 - Assistant/Knowledge/`, project notes in `03 - Personal Projects/`).
+
+## Inbox + SMS as unified capture+command
+
+The user has one input surface: the inbox note (and its SMS bridge). No formatting required; no command syntax. Free-form text. The `intake_agent` classifies each chunk:
+
+- `journal_entry` → routed to journal_agent for incorporation
+- `todo` → proposal to add to short-term todos
+- `plan` → proposal to create dated plan file
+- `calendar_item` → proposal to create event
+- `research_request` → Linear issue created (auto-applied) and possibly picked up
+- `organization_instruction` → routed to vault_organizer
+- `question_to_agent` → response sent (vault note or SMS reply)
+- `direct_command` → executed (e.g., "remind me at 3pm")
+- `noise` → archived to `00 - Assistant/Raw/` for posterity, no action
+
+If the user formats in-inbox (e.g., explicit headers, todo bullets), the intake_agent respects the formatting rather than re-parsing.
 
 ## Security model
 
-- Container has only read-only credentials (Gmail `gmail.readonly`, Calendar `calendar.readonly`, vault read-only mount outside `00 - Assistant/`).
-- Executor holds write credentials in `.env` on the host. Not mounted into the container.
-- SMS service holds Twilio credentials.
-- Google OAuth tokens and API keys rotate via standard refresh flows; refresh tokens are encrypted at rest.
-- Executor validates every proposal against a typed schema before applying. Unknown `action` types are rejected.
-- Every applied proposal appends an audit entry with before/after content hashes.
-- Compromise scenarios and their blast radius are enumerated in `docs/SECURITY.md` (TBD).
+- Container holds only read-only creds: Gmail `gmail.readonly`, Calendar `calendar.readonly`, Linear `LINEAR_API_KEY` (Linear's API has no granular scopes; the team key constrains targeting to the personal-assistant team).
+- `executor`, `sms`, `dispatcher`, `sync`, `devops` services live on the host. Each has only the credentials it needs.
+- Proposals are validated against typed schemas before applying. Unknown action types are rejected.
+- Every applied proposal appends an audit entry with before/after content hashes (or, for non-vault actions, payloads) to `var/executor/audit.log`.
+- v2 `devops` service is constrained by `GITHUB_ALLOWED_REPOS`; PRs are submitted, not direct pushes.
+- Compromise scenarios enumerated in [SECURITY.md](SECURITY.md) (TBD).
 
 ## Reusability
 
-Onboarding a different user is a config change:
+Onboarding a different user is configuration only:
 
-- `config/user.yaml` — vault path, timezone, phone, Google account email, trigger schedules, subagent enable/disable, assistant vocabulary (greeting, style)
+- `config/user.yaml` — vault path, timezone, phone, Google account, trigger schedules, subagent enable/disable
 - `config/providers.yaml` — provider routing
-- `.env` — API keys, OAuth refresh tokens, Twilio creds
+- `.env` — API keys, OAuth refresh tokens, Twilio creds, Linear API key
 
-No code changes required for: switching vaults, switching phones, enabling/disabling subagents, routing to different LLM providers.
+No code changes for: switching vaults, switching phones, enabling/disabling subagents, routing to different LLM providers, pointing at a different Linear team, allowlisting different GitHub repos.
 
-A later onboarding flow — a one-time setup script or UI — could cover the Google OAuth dance and Twilio number provisioning. That is not in the MVP.
-
-## v0 scope
-
-Ship the proposal loop end-to-end on one task, then iterate.
-
-**Target task:** todo-completion detection.
-
-**Components:**
-
-- `agent`: NeMo root agent + `journal_agent` subagent + `proposal_enqueue` tool. Anthropic native provider only. Triggered manually: `docker compose run agent wake --reason=manual-test`.
-- `executor`: Go service, polls `<agent-vault>/00 - Assistant/Proposals/`, applies approved vault edits.
-- `sync`: minimal Go daemon, one-shot on startup + file-watch on `00 - Assistant/`.
-- `compose.yml`: agent + Ollama (not used in v0 but wired) + local volumes.
-
-**Not in v0:** Gmail / Calendar read, OpenRouter / local provider routing, Twilio, scheduled triggers, inbox file-watcher.
-
-**Once v0 works end-to-end, the progression is:**
-
-- v0.1 — inbox file-watcher as a second trigger
-- v0.2 — scheduled triggers + dated-plan reminders (adds Calendar read)
-- v0.3 — OpenAI-compat provider router + Ollama
-- v0.4 — Goodreads sync
-- v0.5 — Twilio
-- v0.6 — email triage (adds Gmail read)
-- v1 — vault_organizer subagent
+A later one-time setup script will cover OAuth dances, Twilio number provisioning, and Linear team auto-creation. Not in v1.
 
 ## Prior art
 
-Three pieces of the author's earlier work inform this design:
-
-- **`claude_partner` pattern** (from `taylor1355/npc-simulation`) — topical knowledge files, session logs, scope-based autonomy. The assistant's self-management surface (`00 - Assistant/Knowledge/`, `00 - Assistant/Sessions/`) is modeled on it.
-- **`productivity_tools` proposal pattern** (from `taylor1355/npc`) — `suggest_actions` → reviewable `InboxAction` objects with status + `is_modified` tracking → `execute_actions`. The proposal queue is the same pattern at the process level.
-- **`mind` cognitive architecture** (from `taylor1355/npc`) — LangGraph-over-Pydantic pipeline with `merge_dicts` reducer for per-node telemetry, scored memory retrieval (`similarity + importance + recency`), validation-failure fallback. The memory scoring and telemetry patterns transfer directly; the fixed-DAG shape does not — this project is agentic rather than pipelined.
+- **`claude_partner` pattern** (`taylor1355/npc-simulation`) — topical knowledge files, session logs, scope-based autonomy. The assistant's self-management surface (`00 - Assistant/Knowledge/`, `Sessions/`) is modeled on it.
+- **`productivity_tools` proposal pattern** (`taylor1355/npc`) — `suggest_actions` → reviewable `InboxAction` → `execute_actions`. The proposal queue is the same pattern at process scope.
+- **`mind` cognitive architecture** (`taylor1355/npc`) — LangGraph-over-Pydantic pipeline; per-node tokens/latency telemetry via `merge_dicts` reducer; scored memory retrieval; safe validation-failure fallback. Memory scoring and telemetry transfer; the fixed-DAG shape does not.
+- **`tools/linear` + PM/work skills** (`taylor1355/npc-simulation`) — bash + TS CLI using `@linear/sdk`; two-layer agent pattern (`linear` tactical, `product-manager` strategic); auto-approved lifecycle transitions in `/work`. Lifted with adaptations.

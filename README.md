@@ -1,33 +1,58 @@
 # personal-assistant
 
-A multi-agent personal assistant that uses Obsidian as its primary interface and treats every write as a reviewable proposal.
+A multi-agent personal assistant that uses Obsidian + SMS as its primary interfaces, Linear as its issue-tracking backbone, and treats every user-state mutation as a reviewable proposal.
 
-**Status: pre-alpha, design phase.** The repo layout, config shape, and runtime behavior are all unstable. Not yet runnable end-to-end.
+**Status: pre-alpha, design phase + v0 landed.** v0 ships the proposal loop end-to-end on todo-completion detection. v1 is the "useful daily" version (in active design + early implementation). Repo layout, config, and runtime behavior are still mutable.
 
 ## What it is
 
-- **Agentic, not scripted.** A root agent dispatches to specialized subagents (email, calendar, journal, vault organization, research, reading) and tools. No fixed pipeline — which subagents run depends on the trigger.
-- **Obsidian-native.** The user's vault is the primary interface surface: assistant writes go into `00 - Assistant/` (proposals, daily digests, session logs); user messages go into an inbox note the assistant watches.
-- **SMS as secondary channel.** Two-way texting for urgent or away-from-desk interaction.
-- **Read-only external access + proposal queue for writes.** The agent container has read-only access to Gmail, Calendar, etc. Every mutation — to the vault, calendar, email, anywhere — flows through a proposal queue reviewed and approved by the user. A separate privileged executor (outside the container) applies approved proposals.
-- **Event-driven.** The agent sleeps and wakes on specific triggers: new inbox content, batched email ticks, inbound SMS, scheduled jobs. No continuous polling.
-- **Configurable provider routing.** Mix local models (Ollama) with cloud APIs (OpenRouter, Anthropic native, etc.) per task. Flip to all-local or all-cloud via config.
+- **Agentic, not scripted.** A root agent dispatches per-trigger to specialist subagents (intake, journal, calendar, email, vault organization, research, reading, PM, Linear, devops). No fixed pipeline — the wake's trigger and current value-priority pick the path.
+- **Unified capture+command.** One inbox note + one SMS thread. You dump raw text, give instructions, ask questions; an `intake_agent` classifies and routes. No formatting required, no command syntax.
+- **Event-driven, debounced.** A host-side dispatcher batches events with quiet/max-delay/buffer policies and wakes the agent with the batch in context. No long-running poll loops.
+- **Value-prioritized wakes.** Every wake asks "what's the most valuable thing I can do right now?" Tier 1: time-sensitive obligations. Tier 2: advanceable user interests from the Linear backlog. Tier 3: long-horizon backburner. Token-budgeted; tier-3 work fills spare cycles when you're unavailable.
+- **Read-only external creds + proposal queue for writes.** The agent container has read-only Gmail / Calendar / Linear-team access. User-state mutations (vault writes, calendar/email writes) go through a proposal queue you review in Obsidian. Mechanical Linear ops (status transitions, label updates) are auto-applied but still logged.
+- **Linear is the issue tracker; Obsidian is knowledge + working notes.** Distinct surfaces, no mirror. Vault organization is its own first-class capability — the `vault_organizer` subagent incrementally proposes frontmatter and Obsidian Bases views over your existing notes.
+- **Dev work, eventually.** v2 lets the agent pick up code-typed Linear issues and submit PRs to your repos (starting with this one). PR review is the approval gate; no special proposal needed.
+- **Configurable provider routing.** Mix local models (Ollama) with cloud APIs (Anthropic, OpenRouter) per task class. Flip to all-local or all-cloud via config. Hard daily/weekly token budgets.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design.
 
-## Scope
+## Capability tiers
 
-The MVP targets three tasks that together exercise every axis of the architecture:
+| Tier | Capability | Status |
+|---|---|---|
+| **v0** | Proposal loop end-to-end on todo-completion detection | shipped |
+| **v1** | Useful daily — intake / dispatcher / value-priority / Linear / vault-organization / digest | in design + early implementation |
+| **v2** | Agent-authored PRs to allowed repos | spec'd, deferred |
+| **v3+** | Open — emerges from running v1+v2 | TBD |
 
-1. **Todo-completion detection** — agent reads today's journal, detects mentions of completed todos, proposes edits to the short-term todos file.
-2. **Dated-plan reminders** — agent monitors `04 - Plans/Dated/YYYY-MM-DD <slug>.md` files, proposes reminders as they approach, archives them after they pass.
-3. **Goodreads ↔ vault sync** — agent keeps the reading list in the vault synced with Goodreads.
+## Spec docs
 
-Beyond the MVP: vault organization improvement (frontmatter, tags, MOCs), calendar-aware scheduling, email triage, web research.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — overall design, components, capability tiers
+- [docs/PROPOSAL_FORMAT.md](docs/PROPOSAL_FORMAT.md) — proposal file schema
+- [docs/BUDGET.md](docs/BUDGET.md) — token spend caps and self-throttling
+- [docs/LINEAR_CONVENTIONS.md](docs/LINEAR_CONVENTIONS.md) — labels, priorities, states, issue templates
+- [docs/VAULT_ORGANIZATION.md](docs/VAULT_ORGANIZATION.md) — frontmatter schemas + Bases view library
+- [docs/DEVOPS.md](docs/DEVOPS.md) — v2 dev-work spec
 
 ## Design philosophy
 
-Opinionated defaults, clean configuration. Built primarily for the author, but structured so that forking and pointing it at a different vault / phone / Google account is a config change, not a code change. The longer-term goal is that a less technical user (say, a parent) could have this stood up for them and use it through Obsidian and SMS without touching the internals.
+Opinionated defaults, clean configuration. Built primarily for the author, but structured so that forking and pointing it at a different vault / phone / Google account / Linear team is a config change, not a code change. Longer-term goal: a less technical user (say, a parent) could have this stood up and use it through Obsidian + SMS without touching the internals.
+
+## Running it (current state)
+
+v0 has the proposal loop wired. From the repo root:
+
+```bash
+uv sync --project agent
+ANTHROPIC_API_KEY=sk-ant-... \
+  VAULT_ROOT="C:\Users\taylor\Documents\Taylor Notes" \
+  PROPOSALS_PATH="./var/proposals" \
+  USER_TIMEZONE="America/New_York" \
+  uv run --project agent personal-assistant-agent wake --reason=manual-test
+```
+
+Reads today's journal section + the short-term todos, asks Claude which todos look done, writes one proposal per detected completion. The executor (still a stub) is what would apply approved proposals back to the vault.
 
 ## License
 
