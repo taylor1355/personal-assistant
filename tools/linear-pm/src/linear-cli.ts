@@ -691,6 +691,99 @@ async function unlink(args: string[]) {
   }
 }
 
+// --- Setup ---
+
+interface LabelSpec {
+  name: string;
+  description: string;
+  color: string;
+  group: "type" | "strategic" | "subsystem";
+}
+
+// Personal-assistant label taxonomy. See docs/LINEAR_CONVENTIONS.md.
+// Order matters: keep groups together for easier review in Linear UI.
+const LABELS: LabelSpec[] = [
+  // Type — exactly one per issue.
+  { name: "feature", description: "New capability", color: "#10b981", group: "type" },
+  { name: "bug", description: "Something broken", color: "#ef4444", group: "type" },
+  { name: "tech-debt", description: "Cleanup, refactor, deferred fix", color: "#92400e", group: "type" },
+  { name: "investigation", description: "Open question that needs research before action", color: "#eab308", group: "type" },
+  { name: "docs", description: "Documentation work", color: "#3b82f6", group: "type" },
+  { name: "life-task", description: "Real-world task (errand, appointment, contact)", color: "#6366f1", group: "type" },
+  { name: "research", description: "Multi-step research deliverable, deep work", color: "#a855f7", group: "type" },
+  { name: "vault-organization", description: "Vault frontmatter, Bases views, MOCs, restructuring", color: "#ec4899", group: "type" },
+  { name: "reading", description: "Books, articles, courses to digest", color: "#f97316", group: "type" },
+  { name: "health", description: "Habits, fitness, medical", color: "#14b8a6", group: "type" },
+  { name: "relationship", description: "People-related (call, plan for, send)", color: "#fb7185" , group: "type" },
+  // Strategic — optional, can stack.
+  { name: "urgent", description: "Time-pressing; bumps tier-1 priority", color: "#dc2626", group: "strategic" },
+  { name: "quick-win", description: "<30 min; agent fits into spare cycles", color: "#84cc16", group: "strategic" },
+  { name: "keystone", description: "Unblocks ≥3 other issues", color: "#8b5cf6", group: "strategic" },
+  { name: "experiment", description: "Try-it-and-see; OK to abandon", color: "#0ea5e9", group: "strategic" },
+  { name: "ongoing", description: "Recurring; doesn't fully complete", color: "#6b7280", group: "strategic" },
+  // Subsystem — for dev-typed issues against this repo.
+  { name: "agent", description: "agent/ — Python NeMo-based core", color: "#475569", group: "subsystem" },
+  { name: "executor", description: "executor/ — Go service applying proposals", color: "#475569", group: "subsystem" },
+  { name: "sync", description: "sync/ — vault two-way sync", color: "#475569", group: "subsystem" },
+  { name: "dispatcher", description: "dispatcher/ — debounced trigger batcher", color: "#475569", group: "subsystem" },
+  { name: "sms", description: "sms/ — Twilio bridge", color: "#475569", group: "subsystem" },
+  { name: "devops", description: "devops/ — v2 PR submission service", color: "#475569", group: "subsystem" },
+  { name: "linear-tool", description: "tools/linear + tools/linear-pm/", color: "#475569", group: "subsystem" },
+  { name: "infra", description: "compose, docker, CI, repo-level config", color: "#475569", group: "subsystem" },
+];
+
+async function setupLabels() {
+  const team = await getTeam();
+  // Filter to team-scoped + workspace-scoped labels (workspace ones still
+  // count for "exists" purposes — Linear lets you reference them).
+  const existing = await client.issueLabels({
+    first: 250,
+    filter: { team: { id: { eq: team.id } } },
+  });
+  const existingByName = new Set(existing.nodes.map((l) => l.name.toLowerCase()));
+
+  // Also inspect workspace-scoped labels (no team filter) so we don't
+  // create a team duplicate of a workspace-scoped one.
+  const workspace = await client.issueLabels({ first: 250 });
+  const workspaceByName = new Map<string, string>();
+  for (const l of workspace.nodes) {
+    if (!l.team) workspaceByName.set(l.name.toLowerCase(), l.id);
+  }
+
+  let created = 0;
+  let skipped = 0;
+  let workspaceConflict = 0;
+  for (const spec of LABELS) {
+    const lower = spec.name.toLowerCase();
+    if (existingByName.has(lower)) {
+      skipped++;
+      continue;
+    }
+    if (workspaceByName.has(lower)) {
+      // A workspace-scoped label with this name already exists. Don't
+      // shadow it with a team-scoped one — note and skip.
+      console.log(`  ~ ${spec.name}: workspace-scoped label already exists, skipping`);
+      workspaceConflict++;
+      continue;
+    }
+    const result = await client.createIssueLabel({
+      teamId: team.id,
+      name: spec.name,
+      description: spec.description,
+      color: spec.color,
+    });
+    if (result.success) {
+      console.log(`  + ${spec.name} (${spec.group})`);
+      created++;
+    } else {
+      console.error(`  ! ${spec.name}: failed to create`);
+    }
+  }
+  console.log(
+    `\nLabels: ${created} created, ${skipped} already present, ${workspaceConflict} workspace-conflicts (idempotent — re-run safe)`
+  );
+}
+
 // --- Main ---
 
 const [, , command, ...args] = process.argv;
@@ -748,6 +841,9 @@ async function main() {
     case "unlink":
       await unlink(args);
       break;
+    case "setup-labels":
+      await setupLabels();
+      break;
     default:
       console.log(
         `Usage: linear <command> [args]\n` +
@@ -760,7 +856,8 @@ async function main() {
           `         create "Title" [--priority P] [--label L ...] [--description D] [--state S] |\n` +
           `         update  (json on stdin: {identifier, title?, description?, priority?, state?, labels?}) |\n` +
           `         comment <id> <body|->  (- reads from stdin) |\n` +
-          `         link <blocker> <blocked> | unlink <blocker> <blocked>`
+          `         link <blocker> <blocked> | unlink <blocker> <blocked>\n` +
+          `Setup:   setup-labels  (idempotent: creates personal-assistant taxonomy)`
       );
   }
 }
