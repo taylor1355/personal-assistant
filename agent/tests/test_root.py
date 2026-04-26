@@ -64,9 +64,9 @@ def test_extract_section_ignores_nondate_headings() -> None:
 
 
 def _make_vault(tmp_path: Path, journal: str = JOURNAL_TEMPLATE, todos: str = TODOS_TEXT) -> Path:
-    (tmp_path / "01 - Journals").mkdir()
+    (tmp_path / "01 - Journals").mkdir(parents=True, exist_ok=True)
     (tmp_path / "01 - Journals" / "2026 Entries.md").write_text(journal, encoding="utf-8")
-    (tmp_path / "02 - Todos").mkdir()
+    (tmp_path / "02 - Todos").mkdir(parents=True, exist_ok=True)
     (tmp_path / "02 - Todos" / "01 - Short Term Todos.md").write_text(todos, encoding="utf-8")
     return tmp_path
 
