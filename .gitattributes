@@ -1,0 +1,4 @@
+# Always check out shell scripts with LF endings, even on Windows.
+# CRLF in a bash script breaks `set -euo pipefail` and shebang resolution.
+*.sh        text eol=lf
+tools/linear text eol=lf

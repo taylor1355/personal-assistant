@@ -27,6 +27,10 @@ build/
 *.test
 *.out
 
+# Node
+node_modules/
+*.tsbuildinfo
+
 # IDE
 .idea/
 .vscode/

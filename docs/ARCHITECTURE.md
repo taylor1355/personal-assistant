@@ -83,7 +83,7 @@ Not every operation goes through user-approval. Some operations have low blast r
 
 | Class | Examples | Path |
 |---|---|---|
-| **User-gated** (default) | `vault_edit`, `vault_create`, `vault_delete`, `calendar_*`, `email_*`, `linear_delete_issue`, `linear_transition_to_cancelled`, `linear_bulk_op` (>5 issues) | proposal → user approves → executor applies |
+| **User-gated** (default) | `vault_edit`, `vault_create`, `vault_delete`, `calendar_*`, `email_*`, `linear_delete_issue`, `linear_transition_to_canceled`, `linear_bulk_op` (>5 issues) | proposal → user approves → executor applies |
 | **Auto-applied** | `linear_create_issue`, `linear_update_issue`, `linear_transition_forward`, `linear_set_priority`, `linear_set_labels`, `linear_set_assignee`, `linear_add_comment`, `linear_link_blocker` | proposal → executor applies immediately → file lands in `Proposals/Applied/` (still auditable) |
 
 Auto-applied proposals are still emitted as files so the user has a complete audit log of what the agent did. The user can disable auto-apply per-class in `config/user.yaml` if they want everything gated.

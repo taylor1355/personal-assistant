@@ -1,0 +1,15 @@
+{
+  "name": "personal-assistant-linear-cli",
+  "version": "0.1.0",
+  "description": "Linear CLI for personal-assistant project management",
+  "private": true,
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@linear/sdk": "^78.0.0",
+    "@types/node": "^25.5.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
+  }
+}

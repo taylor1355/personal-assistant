@@ -65,7 +65,7 @@ Mapped to Linear's standard workflow states:
 | `In Progress` | Currently being worked on |
 | `Blocked` | Waiting on something external (user input, API, another issue) |
 | `Done` | Completed |
-| `Cancelled` | Abandoned without completion (gated transition; agent must explain) |
+| `Canceled` | Abandoned without completion (gated transition; agent must explain) |
 
 ## Issue templates
 
