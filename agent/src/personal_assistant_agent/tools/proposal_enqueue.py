@@ -14,7 +14,7 @@ from personal_assistant_agent.models import Proposal
 DEFAULT_PROPOSALS_DIR = Path("/data/proposals")
 
 
-class ProposalCollision(FileExistsError):
+class ProposalCollisionError(FileExistsError):
     """Raised when a proposal filename already exists in the target directory.
 
     Two proposals minted in the same UTC minute with the same slug collide;
@@ -33,7 +33,7 @@ def enqueue(proposal: Proposal, proposals_dir: Path | None = None) -> Path:
     target_dir.mkdir(parents=True, exist_ok=True)
     target_path = target_dir / proposal.filename()
     if target_path.exists():
-        raise ProposalCollision(str(target_path))
+        raise ProposalCollisionError(str(target_path))
 
     content = proposal.to_markdown()
 

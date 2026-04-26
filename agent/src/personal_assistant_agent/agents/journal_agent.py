@@ -48,7 +48,7 @@ def detect_completed_todos(
     todos_file_path: str,
     now: datetime,
     completions: list[CompletionReport] | None = None,
-    client: "Anthropic | None" = None,
+    client: Anthropic | None = None,
     model: str = DEFAULT_MODEL,
 ) -> list[Proposal]:
     """Return a list of proposals, one per detected completion.
@@ -202,7 +202,7 @@ def _detect_completions(
     *,
     journal_text: str,
     todos_text: str,
-    client: "Anthropic | None",
+    client: Anthropic | None,
     model: str,
 ) -> list[CompletionReport]:
     """Single-turn tool-use call against Anthropic."""
@@ -211,7 +211,9 @@ def _detect_completions(
 
         client = Anthropic()
 
-    response = client.messages.create(
+    # Anthropic SDK overloads expect TypedDicts for tools/tool_choice; we
+    # construct dict literals that match the shape but mypy can't narrow.
+    response = client.messages.create(  # type: ignore[call-overload]
         model=model,
         max_tokens=1024,
         system=_SYSTEM_PROMPT,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -14,7 +14,7 @@ from personal_assistant_agent.models import (
     ProposalFrontmatter,
     Status,
 )
-from personal_assistant_agent.tools.proposal_enqueue import ProposalCollision, enqueue
+from personal_assistant_agent.tools.proposal_enqueue import ProposalCollisionError, enqueue
 
 
 def _sample(
@@ -27,7 +27,7 @@ def _sample(
 ) -> Proposal:
     return Proposal(
         frontmatter=ProposalFrontmatter(
-            proposed_at=at or datetime(2026, 4, 24, 14, 30, 0, tzinfo=timezone.utc),
+            proposed_at=at or datetime(2026, 4, 24, 14, 30, 0, tzinfo=UTC),
             agent="journal_agent",
             action=action,
             target="02 - Todos/01 - Short Term Todos.md",
@@ -69,7 +69,7 @@ def test_notes_section_appears_when_set() -> None:
 def test_target_with_colon_is_yaml_quoted() -> None:
     p = Proposal(
         frontmatter=ProposalFrontmatter(
-            proposed_at=datetime(2026, 4, 24, 14, 30, 0, tzinfo=timezone.utc),
+            proposed_at=datetime(2026, 4, 24, 14, 30, 0, tzinfo=UTC),
             agent="journal_agent",
             action=Action.vault_edit,
             target="path: with a colon.md",
@@ -97,7 +97,7 @@ def test_invalid_slug_rejected(slug: str) -> None:
     with pytest.raises(ValidationError):
         Proposal(
             frontmatter=ProposalFrontmatter(
-                proposed_at=datetime(2026, 4, 24, 14, 30, 0, tzinfo=timezone.utc),
+                proposed_at=datetime(2026, 4, 24, 14, 30, 0, tzinfo=UTC),
                 agent="journal_agent",
                 action=Action.vault_edit,
                 target="t.md",
@@ -111,7 +111,7 @@ def test_slug_over_40_chars_rejected() -> None:
     with pytest.raises(ValidationError):
         Proposal(
             frontmatter=ProposalFrontmatter(
-                proposed_at=datetime(2026, 4, 24, 14, 30, 0, tzinfo=timezone.utc),
+                proposed_at=datetime(2026, 4, 24, 14, 30, 0, tzinfo=UTC),
                 agent="journal_agent",
                 action=Action.vault_edit,
                 target="t.md",
@@ -124,7 +124,7 @@ def test_slug_over_40_chars_rejected() -> None:
 def test_unknown_action_rejected() -> None:
     with pytest.raises(ValidationError):
         ProposalFrontmatter(
-            proposed_at=datetime(2026, 4, 24, 14, 30, 0, tzinfo=timezone.utc),
+            proposed_at=datetime(2026, 4, 24, 14, 30, 0, tzinfo=UTC),
             agent="journal_agent",
             action="teleport_into_vault",  # type: ignore[arg-type]
             target="t.md",
@@ -135,7 +135,7 @@ def test_extra_frontmatter_key_rejected() -> None:
     """Schema must be closed: unknown keys break the executor contract."""
     with pytest.raises(ValidationError):
         ProposalFrontmatter(
-            proposed_at=datetime(2026, 4, 24, 14, 30, 0, tzinfo=timezone.utc),
+            proposed_at=datetime(2026, 4, 24, 14, 30, 0, tzinfo=UTC),
             agent="journal_agent",
             action=Action.vault_edit,
             target="t.md",
@@ -164,7 +164,7 @@ def test_enqueue_is_atomic_no_partial_tmp_left(tmp_path: Path) -> None:
 
 def test_enqueue_collision_raises(tmp_path: Path) -> None:
     enqueue(_sample(), proposals_dir=tmp_path)
-    with pytest.raises(ProposalCollision):
+    with pytest.raises(ProposalCollisionError):
         enqueue(_sample(), proposals_dir=tmp_path)
 
 

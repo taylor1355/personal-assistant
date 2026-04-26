@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import typer
@@ -71,7 +71,7 @@ def propose(
     """Manually enqueue a proposal. Useful for testing the executor pipeline."""
     proposal = Proposal(
         frontmatter=ProposalFrontmatter(
-            proposed_at=datetime.now(timezone.utc),
+            proposed_at=datetime.now(UTC),
             agent=agent,
             action=action,
             target=target,

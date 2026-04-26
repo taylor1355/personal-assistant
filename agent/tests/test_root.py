@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -115,7 +115,7 @@ def test_handle_wake_emits_proposals(tmp_path: Path) -> None:
         "test",
         vault_root=vault,
         proposals_dir=proposals_dir,
-        now=datetime(2026, 4, 24, 14, 30, 0, tzinfo=timezone.utc),
+        now=datetime(2026, 4, 24, 14, 30, 0, tzinfo=UTC),
         timezone_name="UTC",
         client=client,  # type: ignore[arg-type]
     )
@@ -148,7 +148,7 @@ def test_handle_wake_no_entry_today_is_noop(tmp_path: Path) -> None:
         "test",
         vault_root=vault,
         proposals_dir=proposals_dir,
-        now=datetime(2026, 5, 10, 12, 0, 0, tzinfo=timezone.utc),  # no section for 5-10
+        now=datetime(2026, 5, 10, 12, 0, 0, tzinfo=UTC),  # no section for 5-10
         timezone_name="UTC",
         client=_ExplodingClient(),  # type: ignore[arg-type]
     )
@@ -173,13 +173,62 @@ def test_handle_wake_passes_todos_path_through(tmp_path: Path) -> None:
         "test",
         vault_root=vault,
         proposals_dir=proposals_dir,
-        now=datetime(2026, 4, 24, 14, 30, 0, tzinfo=timezone.utc),
+        now=datetime(2026, 4, 24, 14, 30, 0, tzinfo=UTC),
         timezone_name="UTC",
         client=client,  # type: ignore[arg-type]
     )
     assert len(written) == 1
     content = written[0].read_text(encoding="utf-8")
     assert f'target: "{TODOS_FILE}"' in content or f"target: {TODOS_FILE}" in content
+
+
+def test_unknown_reason_is_noop(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """An unrecognized reason logs a warning and returns no proposals."""
+    from personal_assistant_agent.agents.root import handle_wake
+
+    written = handle_wake(
+        "completely-made-up",
+        vault_root=tmp_path,
+        proposals_dir=tmp_path,
+        now=datetime(2026, 4, 24, 14, 30, 0, tzinfo=UTC),
+        timezone_name="UTC",
+    )
+    assert written == []
+    out = capsys.readouterr().out
+    assert "not recognized" in out
+
+
+def test_inbox_reason_requires_linear_client(tmp_path: Path) -> None:
+    from personal_assistant_agent.agents.root import handle_wake
+
+    with pytest.raises(ValueError, match="LinearClient"):
+        handle_wake(
+            "inbox",
+            vault_root=tmp_path,
+            proposals_dir=tmp_path,
+            now=datetime(2026, 4, 24, 14, 30, 0, tzinfo=UTC),
+            timezone_name="UTC",
+        )
+
+
+def test_inbox_reason_with_empty_inbox_is_noop(tmp_path: Path) -> None:
+    """No inbox file (or empty) → intake_agent runs, finds nothing,
+    LinearClient never called. handle_wake returns no proposal paths."""
+    from unittest.mock import MagicMock
+
+    from personal_assistant_agent.agents.root import handle_wake
+
+    linear = MagicMock()
+    written = handle_wake(
+        "inbox",
+        vault_root=tmp_path,
+        proposals_dir=tmp_path,
+        now=datetime(2026, 4, 24, 14, 30, 0, tzinfo=UTC),
+        timezone_name="UTC",
+        linear=linear,
+    )
+    assert written == []
+    linear.create.assert_not_called()
 
 
 def test_handle_wake_respects_timezone(tmp_path: Path) -> None:
@@ -196,7 +245,7 @@ def test_handle_wake_respects_timezone(tmp_path: Path) -> None:
         "test",
         vault_root=vault,
         proposals_dir=proposals_dir,
-        now=datetime(2026, 4, 24, 2, 0, 0, tzinfo=timezone.utc),
+        now=datetime(2026, 4, 24, 2, 0, 0, tzinfo=UTC),
         timezone_name="America/New_York",
         client=client,  # type: ignore[arg-type]
     )

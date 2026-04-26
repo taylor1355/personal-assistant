@@ -6,14 +6,17 @@ Any change here requires a matching change on the Go executor side.
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 
-class Action(str, Enum):
+# Note: ruff's UP042 wants StrEnum, but Mode.replace would shadow str.replace
+# under StrEnum (mypy correctly catches this). Keeping (str, Enum) yields
+# the same wire behaviour without the method-name collision.
+class Action(str, Enum):  # noqa: UP042
     vault_edit = "vault_edit"
     vault_create = "vault_create"
     vault_delete = "vault_delete"
@@ -25,7 +28,7 @@ class Action(str, Enum):
     email_archive = "email_archive"
 
 
-class Status(str, Enum):
+class Status(str, Enum):  # noqa: UP042
     pending = "pending"
     approved = "approved"
     rejected = "rejected"
@@ -33,9 +36,11 @@ class Status(str, Enum):
     failed = "failed"
 
 
-class Mode(str, Enum):
+class Mode(str, Enum):  # noqa: UP042
     diff = "diff"
-    replace = "replace"
+    # mypy thinks `replace` should be str.replace; the Enum metaclass
+    # reassigns the name into an enum member at class-creation time.
+    replace = "replace"  # type: ignore[assignment]
 
 
 _SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -61,7 +66,7 @@ class ProposalFrontmatter(BaseModel):
     @field_validator("proposed_at")
     @classmethod
     def _must_be_utc(cls, v: datetime) -> datetime:
-        if v.tzinfo is None or v.tzinfo.utcoffset(v) != timezone.utc.utcoffset(v):
+        if v.tzinfo is None or v.tzinfo.utcoffset(v) != UTC.utcoffset(v):
             raise ValueError("proposed_at must be UTC (tzinfo=timezone.utc)")
         return v
 
@@ -88,7 +93,7 @@ class Proposal(BaseModel):
 
     def filename(self) -> str:
         """``YYYY-MM-DD-HHMM-<slug>.md`` from the UTC proposed_at timestamp."""
-        t = self.frontmatter.proposed_at.astimezone(timezone.utc)
+        t = self.frontmatter.proposed_at.astimezone(UTC)
         return f"{t.strftime('%Y-%m-%d-%H%M')}-{self.slug}.md"
 
     def to_markdown(self) -> str:

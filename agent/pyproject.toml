@@ -45,3 +45,12 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N"]
+
+[tool.ruff.lint.per-file-ignores]
+# Typer idiom: function-default `typer.Option(...)` is the documented call
+# convention; B008 fires a false positive on every CLI parameter.
+"src/personal_assistant_agent/cli.py" = ["B008"]
+# Test mocks intentionally mirror SDK class names (Anthropic's `messages`
+# attribute is lowercase) and reference upper-case identifiers (PA team
+# key, AGENT_NAME, LinearError) in test names themselves.
+"tests/**/*.py" = ["N801", "N802"]
