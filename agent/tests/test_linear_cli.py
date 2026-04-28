@@ -81,7 +81,10 @@ def test_constructor_raises_when_cli_missing(tmp_path: Path) -> None:
 def test_command_uses_npx_tsx(fake_repo: Path) -> None:
     c = LinearClient(repo_root=fake_repo, api_key="k")
     cmd = c._command("status")
-    assert cmd[0] == "npx"
+    # _command resolves npx via shutil.which on Windows; the absolute path
+    # may end in npx, npx.cmd, or npx.exe depending on the install.
+    npx_basename = Path(cmd[0]).name.lower()
+    assert npx_basename in {"npx", "npx.cmd", "npx.exe"}
     assert cmd[1] == "--prefix"
     assert cmd[2].endswith("linear-pm")
     assert cmd[3] == "tsx"

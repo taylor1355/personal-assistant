@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -166,9 +167,12 @@ class LinearClient:
 
     def _command(self, *args: str) -> list[str]:
         # Skip the bash wrapper; call npx tsx directly so Windows doesn't
-        # need bash in PATH for the agent to reach Linear.
+        # need bash in PATH for the agent to reach Linear. Resolve npx via
+        # shutil.which because subprocess.run on Windows doesn't apply
+        # PATHEXT resolution to bare command names (it would miss npx.cmd).
+        npx = shutil.which("npx") or "npx"
         return [
-            "npx",
+            npx,
             "--prefix",
             str(self._linear_pm),
             "tsx",

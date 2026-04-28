@@ -721,6 +721,9 @@ const LABELS: LabelSpec[] = [
   { name: "keystone", description: "Unblocks ≥3 other issues", color: "#8b5cf6", group: "strategic" },
   { name: "experiment", description: "Try-it-and-see; OK to abandon", color: "#0ea5e9", group: "strategic" },
   { name: "ongoing", description: "Recurring; doesn't fully complete", color: "#6b7280", group: "strategic" },
+  // Track — discriminates work-on-the-system from work-the-system-does.
+  { name: "track-build", description: "Building the assistant (dev work, agent itself)", color: "#0891b2", group: "strategic" },
+  { name: "track-use", description: "Using the assistant (operational work it does for the user)", color: "#65a30d", group: "strategic" },
   // Subsystem — for dev-typed issues against this repo.
   { name: "agent", description: "agent/ — Python NeMo-based core", color: "#475569", group: "subsystem" },
   { name: "executor", description: "executor/ — Go service applying proposals", color: "#475569", group: "subsystem" },
