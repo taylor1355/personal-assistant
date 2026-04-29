@@ -19,13 +19,46 @@ If a config key is added, update three places in the same commit: the `*.example
 
 ## Logging
 
-We don't have a project-wide structured logger yet. Until we do:
+Use the standard library — Python's [`logging`](https://docs.python.org/3/library/logging.html), Go's [`log/slog`](https://pkg.go.dev/log/slog). Both are well-vetted, structured, and ship with stdlib so they don't add deps. Configure once at process start; don't reinitialize per call.
 
-- **Python agent**: write a single line per significant event to stdout (which the wake captures into the session log file). Format: `agent: <subagent or component>: <verb past tense> <subject>` (e.g., `agent: journal_agent: emitted 1 proposal`). Errors go to stderr.
-- **Go services**: `log.Printf` with structured key=value pairs. One day this gets replaced with `slog`; until then, prefer key=value over freeform prose so we can grep.
-- **TS CLI**: stdout for human-readable, exit code for success/fail. Don't use stderr for normal output.
+### Python
 
-Anti-pattern: scattering `print` calls everywhere for "diagnostics." If something's worth logging, it's worth a deliberate one-liner; otherwise it's noise.
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+
+# In a function:
+logger.info("classified %d items", len(items))
+logger.warning("inbox file missing — no work")
+logger.error("linear_create failed for %r: %s", item.summary, exc)
+```
+
+- **Get a logger per module** via `logging.getLogger(__name__)`. The name encodes the source so handlers can filter.
+- **Use lazy `%` formatting**, not f-strings. The logging module skips formatting if the level is filtered out.
+- **Configure once** in a `logging_setup` helper called from `cli.py`'s entry point (or test fixtures). Honors `LOG_LEVEL` env (default `INFO`); INFO+ to stdout, WARNING+ duplicated to stderr; format mirrors the project convention: `agent: <component>: <verb past tense> <subject>`.
+- **No `print()` for telemetry.** `print` is fine for one-shot CLI output meant for the user (e.g., the result of `propose` printing the new path); everything else uses the logger.
+
+### Go
+
+```go
+import "log/slog"
+
+slog.Info("dispatched", "trigger", "inbox_edit", "buffer_size", n)
+slog.Error("apply failed", "proposal", id, "err", err)
+```
+
+- **Initialize the default handler** in `main()`. Plain text for dev (`slog.NewTextHandler(os.Stderr, ...)`), JSON for prod (`slog.NewJSONHandler(...)`) — toggle via env.
+- **Structured key-value pairs** every time. `slog.Info("msg", "key", value)`, not interpolated strings.
+- **No `panic`** in service code; return errors. The top of `main()` may `os.Exit(1)` on a fatal.
+
+### TypeScript
+
+The Linear CLI is small enough that `console.log` for human-readable output and a non-zero exit code on error is sufficient. Don't introduce a logging dep here.
+
+### Anti-pattern
+
+Scattering `print` / `log.Printf` calls everywhere for "diagnostics." If something's worth logging, it's worth a deliberate logger call at the right level. Sprinkled prints become noise that nobody reads — and the test suite captures stdout, so debug-prints can leak into assertions.
 
 ## Errors
 
@@ -63,7 +96,13 @@ When a contract crosses Python ↔ Go ↔ TS:
 
 ## Testing
 
-Full conventions: [testing.md](testing.md). The most important pattern from npc-simulation that transfers verbatim:
+Full conventions: [testing.md](testing.md). Three layers, each with different mocking discipline:
+
+- **Unit** (`agent/tests/`) — pure logic, mocked subprocess + LLM. **Target: 90% branch coverage.**
+- **Integration** (`agent/tests/integration/`) — real subprocess/filesystem/Pydantic; mocked external network only. Lower coverage threshold; goal is wire-up correctness.
+- **Behavioral** (`agent/tests/behavioral/`) — recorded LLM responses against curated conversation histories. Cover the manifold of explicitly-supported use cases. Mix of deterministic assertions and reasoning-based judgment.
+
+The most important pattern that transfers verbatim from npc-simulation:
 
 > Every test must have **regression value** — it should fail if the behavior it documents changes. Before writing a test, ask: "What future code change would make this fail?" If the answer is "nothing realistic," the test is tautological.
 
