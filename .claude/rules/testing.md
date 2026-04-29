@@ -25,7 +25,35 @@ Go service tests:
 cd executor && go test ./... -v -count=1
 ```
 
-Python suite must finish in < 5s; if it slows down, that's a signal — the codebase is dragging in expensive deps somewhere or a test is hitting a real network. Investigate.
+The unit suite must finish in < 5s; if it slows down, that's a signal — the codebase is dragging in expensive deps somewhere or a test is hitting a real network. Investigate.
+
+## Test Layers
+
+Three distinct layers, each in its own directory, each with its own mocking discipline.
+
+### Unit — `agent/tests/`
+
+Pure-logic tests. The default home for everything that doesn't need a real subprocess or filesystem layout. Subprocess and LLM are mocked at their boundaries (see "Mocking Discipline" below).
+
+**Coverage gate: 90% branch coverage** on `agent/src/`, enforced by `pytest-cov --cov-branch --cov-fail-under=90`. The PR pipeline blocks merges that drop below the line. Coverage must come from tests with regression value — never write trivial tests for coverage padding.
+
+### Integration — `agent/tests/integration/`
+
+Real subprocess, real filesystem, real Pydantic validation. Only the external network is mocked: Anthropic API, Linear's HTTP API, Gmail, Calendar, GitHub. Goal: prove pieces wire together, including the parts unit tests stub out (the bash wrapper, npx invocation, tempfile semantics, file-watcher events, real proposal-file round-trips).
+
+A representative integration test: populate a tmp vault with an Inbox.md, run the real CLI subprocess (`personal-assistant-agent wake --reason=inbox`) with a mocked Anthropic and a faked `tools/linear-pm` (a stub that records calls), and assert the resulting Linear ops + proposal files match expectation.
+
+Lower coverage threshold (target ~60% of integration-relevant code paths; pick the actual number after a baseline run). Coverage is a secondary signal here — the goal is wire-up confidence.
+
+### Behavioral — `agent/tests/behavioral/`
+
+Records of LLM responses against curated conversation histories. Each scenario covers a use case we explicitly support; together they map the manifold of optimized behavior — not edge cases.
+
+**Fixture format** (TBD; design lands with PA-22):
+- A YAML/JSON file per scenario with: setup state (vault contents, Linear backlog, env), trigger event, recorded LLM responses (so re-runs are deterministic without API calls), and expected behaviors expressed as a mix of deterministic assertions ("a Linear issue with title X exists in Triage") and judge prompts ("does the agent's response acknowledge the user's stated time constraint?" answered by an LLM-as-judge).
+- Re-recording is an explicit operation (`pytest agent/tests/behavioral --record`) that hits real APIs; CI runs only against the recorded set.
+
+Behavioral tests don't aim for branch coverage; they aim to **catch regressions in agent reasoning** — silent quality drops that unit tests won't notice (the LLM picks the wrong subagent, drafts a sloppy proposal body, mis-classifies an inbox item). Add a behavioral test when a use case becomes a public commitment, not for every code path.
 
 ## Static Analysis Before Commit
 
@@ -33,13 +61,38 @@ Python suite must finish in < 5s; if it slows down, that's a signal — the code
 uv run --project agent ruff check agent
 uv run --project agent mypy agent/src
 cd executor && go vet ./...
+cd sync && go vet ./...
 ```
 
 The `code-quality` agent does all four in `fix-loop` mode and surfaces what to fix. Don't commit with new lint errors — the `pr` skill will block at Phase 1 anyway.
 
+## Coverage
+
+```bash
+# Unit layer with branch coverage — enforced gate
+uv run --project agent pytest agent/tests --cov=agent/src --cov-branch \
+    --cov-report=term-missing --cov-fail-under=90
+
+# Show what's missing to chase from 89% → 90%
+uv run --project agent pytest agent/tests --cov=agent/src --cov-branch \
+    --cov-report=html
+# then open htmlcov/index.html
+```
+
+`pytest-cov` is in the dev group of `agent/pyproject.toml`. The 90% gate blocks PR merges via the `pr` skill's Phase 3 convergence gate. If you can't reach 90% on a new file, the function is probably testing too many things — split it.
+
+Integration and behavioral layers don't gate on coverage. They gate on "did the recorded scenarios still pass," which is a different signal.
+
 ## Test File Conventions
 
-- **Path**: `agent/tests/test_<subject>.py` — flat directory, mirrors `agent/src/personal_assistant_agent/<subject>.py`. Don't reproduce the package's nested folder structure unless tests would otherwise collide.
+Per layer:
+
+| Layer | Path | What |
+|---|---|---|
+| Unit | `agent/tests/test_<subject>.py` | Mirrors `agent/src/personal_assistant_agent/<subject>.py` flat. Default home. |
+| Integration | `agent/tests/integration/test_<scenario>.py` | One file per multi-component scenario. |
+| Behavioral | `agent/tests/behavioral/<scenario>.yaml` + `agent/tests/behavioral/test_runner.py` | Fixture-per-file; runner discovers and executes. |
+
 - **Function naming**: `test_<subject>_<behavior>_<condition>`. Read the name aloud and it should describe what's verified.
 - **Fixtures**: `@pytest.fixture` in the same file when used by ≤2 tests; `conftest.py` for ones reused across files.
 - **Async**: `pytest.mark.asyncio` (configured); `pytest-asyncio` is in the dev group.
