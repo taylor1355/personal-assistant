@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -140,24 +141,43 @@ def _run_intake(
 ) -> IntakeResult:
     """Read inbox content and route through intake_agent.
 
-    Returns the IntakeResult so CLI/callers can render it; ``handle_wake``
-    discards the value for now and just runs for side effects.
+    Logs a one-liner per significant event to stdout (per
+    ``.claude/rules/development-patterns.md``) so the session log
+    captures what intake did. Errors go to stderr.
     """
     try:
         inbox_text = read_vault_file(INBOX_FILE, vault_root=vault_root)
     except (FileNotFoundError, VaultPathError):
-        # Empty inbox is the steady state when there's nothing new.
+        print("agent: intake_agent: no inbox file — no work")
         return IntakeResult(items=[], linear_created=[], deferred=[], errors=[])
 
     if not inbox_text.strip():
+        print("agent: intake_agent: inbox empty — no work")
         return IntakeResult(items=[], linear_created=[], deferred=[], errors=[])
 
-    return process_inbox(
+    result = process_inbox(
         inbox_text=inbox_text,
         linear=linear,
         client=client,
         model=model,
     )
+
+    print(f"agent: intake_agent: classified {len(result.items)} item(s)")
+    if result.linear_created:
+        print(
+            f"agent: intake_agent: created {len(result.linear_created)} "
+            f"Linear issue(s): {', '.join(result.linear_created)}"
+        )
+    if result.deferred:
+        kinds = sorted({item.kind for item in result.deferred})
+        print(
+            f"agent: intake_agent: deferred {len(result.deferred)} "
+            f"item(s) [{', '.join(kinds)}]"
+        )
+    for err in result.errors:
+        print(f"agent: intake_agent: error: {err}", file=sys.stderr)
+
+    return result
 
 
 _DATE_HEADING = re.compile(r"^# \d{1,2}-\d{1,2}\s*$")
