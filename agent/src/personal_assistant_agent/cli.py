@@ -5,7 +5,7 @@ from pathlib import Path
 
 import typer
 
-from personal_assistant_agent.agents.root import handle_wake
+from personal_assistant_agent.agents.root import INBOX_REASONS, handle_wake
 from personal_assistant_agent.models import (
     Action,
     Mode,
@@ -13,9 +13,20 @@ from personal_assistant_agent.models import (
     ProposalBody,
     ProposalFrontmatter,
 )
+from personal_assistant_agent.tools.linear_cli import LinearClient
 from personal_assistant_agent.tools.proposal_enqueue import enqueue
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
+
+
+def _default_repo_root() -> Path:
+    """Repo root inferred from this file's location.
+
+    cli.py lives at ``<repo>/agent/src/personal_assistant_agent/cli.py``;
+    walk up four parents to find ``<repo>``. Works in dev and in any
+    container that preserves the package layout under its workdir.
+    """
+    return Path(__file__).resolve().parents[3]
 
 
 @app.command()
@@ -33,17 +44,30 @@ def wake(
         None, "--timezone", envvar="USER_TIMEZONE",
         help="IANA zone name for computing today's journal section.",
     ),
+    repo_root: Path | None = typer.Option(
+        None, "--repo-root", envvar="REPO_ROOT",
+        help="Repo root for locating tools/linear-pm. Defaults to package-relative.",
+    ),
 ) -> None:
     """Wake the agent with a named trigger.
 
-    v0: every wake invokes the journal_agent subagent. Requires
-    ``ANTHROPIC_API_KEY`` in the environment.
+    Routes by reason (see ``handle_wake``). Inbox-class reasons require
+    ``ANTHROPIC_API_KEY`` and ``LINEAR_API_KEY``; journal-class reasons
+    only require Anthropic.
     """
+    linear: LinearClient | None = None
+    if reason in INBOX_REASONS:
+        # Lazy: only construct when an inbox-class reason actually needs
+        # Linear. Constructing on every wake would force LINEAR_API_KEY
+        # for journal-only deployments.
+        linear = LinearClient(repo_root=repo_root or _default_repo_root())
+
     written = handle_wake(
         reason,
         vault_root=vault_root,
         proposals_dir=proposals_dir,
         timezone_name=timezone_name,
+        linear=linear,
     )
     if not written:
         typer.echo(f"agent: wake reason={reason!r} — no proposals emitted")
