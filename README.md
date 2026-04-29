@@ -26,8 +26,13 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design.
 | **v2** | Agent-authored PRs to allowed repos | spec'd, deferred |
 | **v3+** | Open — emerges from running v1+v2 | TBD |
 
+## Getting started
+
+See [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) for the full setup walk-through (toolchain installs, secrets, first run, troubleshooting). The short version: install `uv`, `node`, `gh`; clone; copy `.env.example → .env` and fill in `ANTHROPIC_API_KEY` + `LINEAR_API_KEY`; `uv sync --project agent`; `bash tools/linear whoami` to smoke test.
+
 ## Spec docs
 
+- [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) — setup, first run, common operations
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — overall design, components, capability tiers
 - [docs/PROPOSAL_FORMAT.md](docs/PROPOSAL_FORMAT.md) — proposal file schema
 - [docs/BUDGET.md](docs/BUDGET.md) — token spend caps and self-throttling
@@ -41,18 +46,19 @@ Opinionated defaults, clean configuration. Built primarily for the author, but s
 
 ## Running it (current state)
 
-v0 has the proposal loop wired. From the repo root:
+After completing setup per [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md), v0 (journal-completion detection) runs end-to-end:
 
 ```bash
-uv sync --project agent
 ANTHROPIC_API_KEY=sk-ant-... \
-  VAULT_ROOT="C:\Users\taylor\Documents\Taylor Notes" \
+  VAULT_ROOT="/path/to/your/Obsidian/vault" \
   PROPOSALS_PATH="./var/proposals" \
   USER_TIMEZONE="America/New_York" \
-  uv run --project agent personal-assistant-agent wake --reason=manual-test
+  uv run --project agent personal-assistant-agent wake --reason=journal
 ```
 
-Reads today's journal section + the short-term todos, asks Claude which todos look done, writes one proposal per detected completion. The executor (still a stub) is what would apply approved proposals back to the vault.
+Reads today's journal section + the short-term todos, asks Claude which todos look done, writes one proposal per detected completion. The executor (still a stub — PA-3 in the backlog) is what would apply approved proposals back to the vault.
+
+The inbox flow (`wake --reason=inbox`) is wired but needs PA-1 to land before the CLI passes a `LinearClient` through to it.
 
 ## License
 
