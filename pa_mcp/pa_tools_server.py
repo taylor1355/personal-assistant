@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+from datetime import datetime
 from pathlib import Path
 from types import ModuleType
 
@@ -152,6 +153,37 @@ def linear_set_priority(priority: int, identifiers: list[str]) -> str:
 def linear_link(blocker: str, blocked: str) -> str:
     """Record that `blocker` blocks `blocked` (both Linear issue identifiers)."""
     return _linear.link(blocker, blocked)
+
+
+# --- Assistant-owned writes (briefings / digests — NOT user content) ---
+
+ASSISTANT_ROOT = "00 - Assistant"
+
+
+@mcp.tool()
+def today() -> str:
+    """Today's local date and weekday, e.g. '2026-06-22 (Monday)'. Use this to
+    date briefings and reason about 'today'/'this week' — never guess the date."""
+    return datetime.now().strftime("%Y-%m-%d (%A)")
+
+
+@mcp.tool()
+def assistant_write(path: str, content: str) -> str:
+    """Write a UTF-8 file under the assistant-owned vault area ('00 - Assistant/...').
+    For briefings, digests, and assistant notes. `path` is relative to the vault
+    root and MUST be inside '00 - Assistant/'. Refuses anything outside it — user
+    content is mutated only through proposals, never written directly."""
+    root = VAULT_ROOT.resolve()
+    rel = Path(path)
+    if rel.is_absolute():
+        raise ValueError("path must be relative to the vault root")
+    target = (root / rel).resolve()
+    assistant_area = (root / ASSISTANT_ROOT).resolve()
+    if target != assistant_area and assistant_area not in target.parents:
+        raise ValueError(f"refused: {path!r} is outside '{ASSISTANT_ROOT}/' (user content needs a proposal)")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+    return f"wrote {target.relative_to(root)} ({len(content)} chars)"
 
 
 if __name__ == "__main__":
