@@ -43,7 +43,8 @@ Write a short, bolded-where-it-counts briefing with these sections:
 
 Calendar and email aren't wired yet (coming in v1) — say so in one line if relevant; do not fabricate events or messages.
 
-## Save
+## Save and deliver
 
-- `assistant_write` to `00 - Assistant/Briefings/<YYYY-MM-DD>.md` (date from `today`).
-- Then reply with a 2-line summary and the file path. Keep the chat reply short — the full briefing lives in the file.
+- First `assistant_write` the briefing to `00 - Assistant/Briefings/<YYYY-MM-DD>.md` (date from `today`) — the durable archive.
+- Then make your FINAL reply the **full briefing itself** — it is delivered straight to Taylor on Telegram, so send the whole thing, not a summary or a file path.
+- Format for a phone: short, with `*bold*` section labels and `-` bullets. Do NOT use Markdown tables or `#` headers — they don't render cleanly on Telegram. Keep it scannable in one message.
