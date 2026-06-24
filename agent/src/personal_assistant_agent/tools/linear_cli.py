@@ -166,16 +166,17 @@ class LinearClient:
         return result.stdout
 
     def _command(self, *args: str) -> list[str]:
-        # Skip the bash wrapper; call npx tsx directly so Windows doesn't
-        # need bash in PATH for the agent to reach Linear. Resolve npx via
-        # shutil.which because subprocess.run on Windows doesn't apply
-        # PATHEXT resolution to bare command names (it would miss npx.cmd).
-        npx = shutil.which("npx") or "npx"
+        # Invoke tsx's CLI through `node` directly, NOT through `npx`. On
+        # Windows `npx` resolves to npx.cmd, and spawning a .cmd from a
+        # console-less parent (the long-running gateway process) stalls the
+        # call to 60s+ even though it's ~3.6s from a normal shell. `node` is a
+        # real .exe, so `node <tsx-cli> <linear-cli.ts>` skips the cmd.exe
+        # layer and stays fast in every spawn context.
+        node = shutil.which("node") or "node"
+        tsx_cli = self._linear_pm / "node_modules" / "tsx" / "dist" / "cli.mjs"
         return [
-            npx,
-            "--prefix",
-            str(self._linear_pm),
-            "tsx",
+            node,
+            str(tsx_cli),
             str(self._cli),
             *args,
         ]
