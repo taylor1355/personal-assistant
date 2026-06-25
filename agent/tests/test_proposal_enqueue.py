@@ -14,7 +14,29 @@ from personal_assistant_agent.models import (
     ProposalFrontmatter,
     Status,
 )
-from personal_assistant_agent.tools.proposal_enqueue import ProposalCollisionError, enqueue
+from personal_assistant_agent.tools.proposal_enqueue import (
+    ProposalCollisionError,
+    build_proposal,
+    enqueue,
+)
+
+_UTC_NOW = datetime(2026, 4, 24, 14, 30, 0, tzinfo=UTC)
+
+
+def _build(**overrides: object) -> Proposal:
+    """build_proposal with valid defaults; override one field per test."""
+    kwargs: dict[str, object] = dict(
+        action="vault_edit",
+        target="02 - Todos/01 - Short Term Todos.md",
+        intent="Check off 'Gym 3x this week'.",
+        reasoning="Journal: 'Got my third gym session in.'",
+        change="```diff\n-- Gym 3x this week\n++ done\n```",
+        slug="check-off-gym-todo",
+        now=_UTC_NOW,
+        mode="diff",
+    )
+    kwargs.update(overrides)
+    return build_proposal(**kwargs)  # type: ignore[arg-type]
 
 
 def _sample(
@@ -172,3 +194,47 @@ def test_enqueue_uses_env_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("PROPOSALS_PATH", str(tmp_path))
     out = enqueue(_sample())
     assert out.parent == tmp_path
+
+
+# --- build_proposal: primitive tool inputs -> validated Proposal ---
+
+
+def test_build_proposal_coerces_string_action_and_mode() -> None:
+    p = _build(action="vault_create", mode="replace")
+    assert p.frontmatter.action is Action.vault_create
+    assert p.frontmatter.mode is Mode.replace
+
+
+def test_build_proposal_omits_mode_when_none() -> None:
+    assert _build(mode=None).frontmatter.mode is None
+
+
+def test_build_proposal_defaults_agent_to_orchestrator() -> None:
+    assert _build().frontmatter.agent == "orchestrator"
+
+
+def test_build_proposal_uses_provided_now() -> None:
+    when = datetime(2026, 1, 2, 3, 4, 0, tzinfo=UTC)
+    p = _build(now=when)
+    assert p.frontmatter.proposed_at == when
+    assert p.filename() == "2026-01-02-0304-check-off-gym-todo.md"
+
+
+def test_build_proposal_unknown_action_raises_valueerror() -> None:
+    # ValueError (not ValidationError) is the contract the propose tool's
+    # except clause relies on to give the LLM the valid-action list.
+    with pytest.raises(ValueError):
+        _build(action="teleport_into_vault")
+
+
+def test_build_proposal_invalid_slug_raises_validationerror() -> None:
+    # The closed schema must still bite when reached through the helper.
+    with pytest.raises(ValidationError):
+        _build(slug="Has_Underscore")
+
+
+def test_build_proposal_then_enqueue_roundtrip(tmp_path: Path) -> None:
+    p = _build()
+    out = enqueue(p, proposals_dir=tmp_path)
+    assert out.name == "2026-04-24-1430-check-off-gym-todo.md"
+    assert out.read_text(encoding="utf-8") == p.to_markdown()
