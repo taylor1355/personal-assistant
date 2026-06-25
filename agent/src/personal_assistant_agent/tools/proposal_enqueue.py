@@ -7,9 +7,16 @@ from __future__ import annotations
 
 import os
 import tempfile
+from datetime import datetime
 from pathlib import Path
 
-from personal_assistant_agent.models import Proposal
+from personal_assistant_agent.models import (
+    Action,
+    Mode,
+    Proposal,
+    ProposalBody,
+    ProposalFrontmatter,
+)
 
 DEFAULT_PROPOSALS_DIR = Path("/data/proposals")
 
@@ -20,6 +27,41 @@ class ProposalCollisionError(FileExistsError):
     Two proposals minted in the same UTC minute with the same slug collide;
     the caller should choose a distinguishing slug and retry.
     """
+
+
+def build_proposal(
+    *,
+    action: str,
+    target: str,
+    intent: str,
+    reasoning: str,
+    change: str,
+    slug: str,
+    now: datetime,
+    agent: str = "orchestrator",
+    mode: str | None = None,
+    notes: str | None = None,
+) -> Proposal:
+    """Assemble a validated ``Proposal`` from primitive (string) tool inputs.
+
+    The propose tool hands the LLM's raw arguments here. String ``action`` and
+    ``mode`` are coerced to their enums — an unknown value raises ``ValueError``
+    naming the offending input. The returned ``Proposal`` is fully validated by
+    its closed Pydantic schema (UTC timestamp, kebab slug, no extra keys); the
+    caller passes it to ``enqueue``. ``now`` is taken explicitly so callers
+    control the timestamp (and tests stay deterministic).
+    """
+    return Proposal(
+        frontmatter=ProposalFrontmatter(
+            proposed_at=now,
+            agent=agent,
+            action=Action(action),
+            target=target,
+            mode=Mode(mode) if mode is not None else None,
+        ),
+        body=ProposalBody(intent=intent, reasoning=reasoning, change=change, notes=notes),
+        slug=slug,
+    )
 
 
 def enqueue(proposal: Proposal, proposals_dir: Path | None = None) -> Path:

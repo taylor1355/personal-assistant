@@ -2,11 +2,11 @@
 
 Specification for the proposal-queue file format. Anything emitted by the agent and consumed by the executor MUST conform to this document. Referenced from [ARCHITECTURE.md](ARCHITECTURE.md#the-proposal-queue).
 
-The agent-side tool that writes proposals is `proposal_enqueue` (Python, in `agent/src/personal_assistant_agent/tools/`). The executor-side validator (Go, in `executor/internal/proposals/`) parses and verifies proposals before any adapter runs.
+The agent-side tool that writes proposals is the Hermes `propose` MCP tool (`pa_mcp/pa_tools_server.py`). It assembles a `Proposal` from the LLM's arguments via `build_proposal` and writes it through `enqueue` (both in `agent/src/personal_assistant_agent/tools/proposal_enqueue.py`), validating the closed schema before the file is written. The applier (PA-3) re-validates against the same schema before any adapter runs.
 
 ## Location and lifecycle
 
-- **Written to** (inside the container): `$PROPOSALS_PATH`, default `/data/proposals/`.
+- **Written to**: `00 - Assistant/Proposals/` in the agent's vault copy (the `propose` tool targets this assistant-owned area, so emitting a proposal is itself never a user-state mutation). `enqueue` otherwise falls back to `$PROPOSALS_PATH` when no directory is passed.
 - **User reviews** the file in Obsidian (the sync service exposes the proposals folder under `00 - Assistant/Proposals/` in the real vault).
 - **User approves** by editing frontmatter `status: pending → approved` (or `→ rejected`).
 - **Executor applies** approved proposals, transitions to `status: applied` (or `failed`) with a result block appended, then moves the file to `00 - Assistant/Proposals/Applied/YYYY-MM/`.

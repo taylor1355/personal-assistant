@@ -19,11 +19,13 @@ from __future__ import annotations
 
 import importlib.util
 import os
-from datetime import datetime
+import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
 
 from mcp.server.fastmcp import FastMCP
+from pydantic import ValidationError
 
 REPO_ROOT = Path(os.environ.get("PA_REPO_ROOT", "")).expanduser()
 VAULT_ROOT = Path(os.environ.get("VAULT_ROOT", "")).expanduser()
@@ -62,6 +64,17 @@ _linear_cli = _load_module("pa_linear_cli", _tools_dir / "linear_cli.py")
 
 _load_env_file(REPO_ROOT)
 _linear = _linear_cli.LinearClient(repo_root=REPO_ROOT)
+
+# The proposal-emission helpers are real package modules (proposal_enqueue
+# imports personal_assistant_agent.models). The package __init__ is trivial
+# post-pivot, so putting agent/src on the path and importing them directly is
+# clean — no _load_module dance needed here.
+sys.path.insert(0, str(REPO_ROOT / "agent" / "src"))
+from personal_assistant_agent.tools.proposal_enqueue import (  # noqa: E402
+    ProposalCollisionError,
+    build_proposal,
+    enqueue,
+)
 
 mcp = FastMCP("pa-tools")
 
@@ -184,6 +197,72 @@ def assistant_write(path: str, content: str) -> str:
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
     return f"wrote {target.relative_to(root)} ({len(content)} chars)"
+
+
+# --- Proposals: the write path to user state (queued, never auto-applied) ---
+
+PROPOSALS_DIR = VAULT_ROOT / ASSISTANT_ROOT / "Proposals"
+
+
+@mcp.tool()
+def propose(
+    action: str,
+    target: str,
+    intent: str,
+    reasoning: str,
+    change: str,
+    slug: str,
+    mode: str | None = None,
+    notes: str | None = None,
+) -> str:
+    """Queue a proposed change to user state for the user to approve.
+
+    This is the ONLY way to change anything outside '00 - Assistant/'. It does
+    NOT apply the change — it writes a pending proposal the user reviews and
+    approves in Obsidian; a separate privileged step applies approved ones.
+    Emit ONE change per call (one todo, one event); split unrelated changes
+    into separate proposals so each can be approved independently.
+
+    action: one of vault_edit, vault_create, vault_delete, calendar_create,
+        calendar_update, calendar_delete, email_draft, email_label,
+        email_archive.
+    target: what the change acts on — a vault path relative to the vault root
+        for vault_*, a calendar event id for calendar_*, a Gmail id for email_*.
+    intent: one human sentence — what changes if the user approves.
+    reasoning: why now. Quote the evidence (the journal line, the event) that
+        triggered this; use [[wiki-links]] for vault sources.
+    change: the exact change — a fenced unified diff (vault_edit, mode='diff'),
+        full file content (vault_create / vault_edit mode='replace'), or the API
+        payload (calendar_*/email_*). Never describe it vaguely.
+    slug: kebab-case, <=40 chars, summarizing the change (e.g.
+        'check-off-gym-todo').
+    mode: for vault_edit only — 'diff' or 'replace'. Omit otherwise.
+    notes: optional — ambiguity, alternatives considered, or follow-ups.
+    """
+    try:
+        proposal = build_proposal(
+            action=action,
+            target=target,
+            intent=intent,
+            reasoning=reasoning,
+            change=change,
+            slug=slug,
+            mode=mode,
+            notes=notes,
+            now=datetime.now(UTC),
+        )
+    except (ValueError, ValidationError) as e:
+        raise ValueError(f"invalid proposal: {e}") from e
+    try:
+        path = enqueue(proposal, proposals_dir=PROPOSALS_DIR)
+    except ProposalCollisionError as e:
+        raise ValueError(
+            f"a proposal already exists at {e}; choose a more specific slug and retry"
+        ) from e
+    return (
+        f"queued proposal {path.name} (status: pending). It awaits your approval in "
+        f"'{ASSISTANT_ROOT}/Proposals/'; nothing changes until you approve it."
+    )
 
 
 if __name__ == "__main__":
