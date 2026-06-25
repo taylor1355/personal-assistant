@@ -78,18 +78,19 @@ def test_constructor_raises_when_cli_missing(tmp_path: Path) -> None:
 # --- Command shaping ---
 
 
-def test_command_uses_npx_tsx(fake_repo: Path) -> None:
+def test_command_invokes_tsx_through_node_directly(fake_repo: Path) -> None:
     c = LinearClient(repo_root=fake_repo, api_key="k")
     cmd = c._command("status")
-    # _command resolves npx via shutil.which on Windows; the absolute path
-    # may end in npx, npx.cmd, or npx.exe depending on the install.
-    npx_basename = Path(cmd[0]).name.lower()
-    assert npx_basename in {"npx", "npx.cmd", "npx.exe"}
-    assert cmd[1] == "--prefix"
-    assert cmd[2].endswith("linear-pm")
-    assert cmd[3] == "tsx"
-    assert cmd[4].endswith("linear-cli.ts")
-    assert cmd[5] == "status"
+    # The command must run `node <tsx-cli> <linear-cli.ts>` — NOT via npx.
+    # Spawning npx.cmd from the console-less gateway process stalls to 60s+;
+    # node is a real .exe, so this shape is what keeps Linear calls fast.
+    exe_basename = Path(cmd[0]).name.lower()
+    assert exe_basename in {"node", "node.cmd", "node.exe"}
+    assert "npx" not in exe_basename
+    assert cmd[1].endswith(("cli.mjs", "cli.js"))
+    assert "tsx" in cmd[1]
+    assert cmd[2].endswith("linear-cli.ts")
+    assert cmd[3] == "status"
 
 
 def test_run_passes_api_key_and_team_key_via_env(
