@@ -12,7 +12,9 @@ from personal_assistant_agent.models import (
     Proposal,
     ProposalBody,
     ProposalFrontmatter,
+    ProposalParseError,
     Status,
+    parse_proposal,
 )
 from personal_assistant_agent.tools.proposal_enqueue import (
     ProposalCollisionError,
@@ -238,3 +240,72 @@ def test_build_proposal_then_enqueue_roundtrip(tmp_path: Path) -> None:
     out = enqueue(p, proposals_dir=tmp_path)
     assert out.name == "2026-04-24-1430-check-off-gym-todo.md"
     assert out.read_text(encoding="utf-8") == p.to_markdown()
+
+
+# --- parse_proposal: read a proposal file back into a validated Proposal ---
+
+
+@pytest.mark.parametrize(
+    "proposal",
+    [
+        _sample(),
+        _sample(notes="Follow up if two more mentions land this week."),
+        _sample(action=Action.vault_delete, mode=None),
+    ],
+)
+def test_parse_proposal_roundtrips(proposal: Proposal) -> None:
+    # to_markdown -> parse_proposal must reproduce the original exactly; this
+    # is the encode/decode contract the applier relies on.
+    assert parse_proposal(proposal.to_markdown(), proposal.slug) == proposal
+
+
+def test_parse_proposal_preserves_headers_inside_fenced_change() -> None:
+    # A vault_create Change carries a full note body — its own '## headers'
+    # are content, not section breaks. The fence-aware splitter must not cut on
+    # them, or the parsed change is truncated.
+    change = "```markdown\n# Note\n\n## Section A\nalpha\n\n## Section B\nbeta\n```"
+    p = Proposal(
+        frontmatter=ProposalFrontmatter(
+            proposed_at=datetime(2026, 4, 24, 14, 30, tzinfo=UTC),
+            agent="intake_agent",
+            action=Action.vault_create,
+            target="05 - Ideas/new-note.md",
+            mode=Mode.replace,
+        ),
+        body=ProposalBody(intent="Create a note.", reasoning="User asked.", change=change),
+        slug="create-new-note",
+    )
+    parsed = parse_proposal(p.to_markdown(), p.slug)
+    assert "## Section A" in parsed.body.change
+    assert "## Section B" in parsed.body.change
+    assert parsed == p
+
+
+def test_parse_proposal_reads_approved_status() -> None:
+    # The applier parses files the user has flipped to approved.
+    md = _sample().to_markdown().replace("status: pending", "status: approved")
+    assert parse_proposal(md, "check-off-gym-todo").frontmatter.status is Status.approved
+
+
+def test_parse_proposal_rejects_missing_frontmatter() -> None:
+    with pytest.raises(ProposalParseError):
+        parse_proposal("## Intent\nx\n\n## Reasoning\ny\n\n## Change\nz\n", "no-fm")
+
+
+def test_parse_proposal_rejects_unterminated_frontmatter() -> None:
+    with pytest.raises(ProposalParseError):
+        parse_proposal("---\naction: vault_edit\n", "unterminated")
+
+
+def test_parse_proposal_rejects_missing_change_section() -> None:
+    md = _sample().to_markdown().split("## Change")[0]
+    with pytest.raises(ProposalParseError):
+        parse_proposal(md, "check-off-gym-todo")
+
+
+def test_parse_proposal_revalidates_closed_schema() -> None:
+    # A drifted/tampered file with an unknown frontmatter key must not parse —
+    # the applier's authoritative re-check, not just the emit-time check.
+    md = _sample().to_markdown().replace("status: pending\n", "status: pending\npriority: high\n")
+    with pytest.raises(ValidationError):
+        parse_proposal(md, "check-off-gym-todo")
