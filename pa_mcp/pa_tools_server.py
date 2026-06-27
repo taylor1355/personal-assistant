@@ -185,23 +185,32 @@ def assistant_write(path: str, content: str) -> str:
     """Write a UTF-8 file under the assistant-owned vault area ('00 - Assistant/...').
     For briefings, digests, and assistant notes. `path` is relative to the vault
     root and MUST be inside '00 - Assistant/'. Refuses anything outside it — user
-    content is mutated only through proposals, never written directly."""
-    root = VAULT_ROOT.resolve()
-    rel = Path(path)
-    if rel.is_absolute():
-        raise ValueError("path must be relative to the vault root")
-    target = (root / rel).resolve()
-    assistant_area = (root / ASSISTANT_ROOT).resolve()
-    if target != assistant_area and assistant_area not in target.parents:
-        raise ValueError(f"refused: {path!r} is outside '{ASSISTANT_ROOT}/' (user content needs a proposal)")
+    content is mutated only through proposals, never written directly. In
+    particular it cannot reach the proposal queue ('00 - Proposals/'), so it
+    cannot forge or approve a proposal."""
+    try:
+        target = _vault_read.resolve_within(VAULT_ROOT, path)
+    except _vault_read.VaultPathError as e:
+        raise ValueError(str(e)) from e
+    assistant_area = (VAULT_ROOT / ASSISTANT_ROOT).resolve()
+    if not _vault_read.is_within(target, assistant_area):
+        raise ValueError(
+            f"refused: {path!r} is outside '{ASSISTANT_ROOT}/' (user content needs a proposal)"
+        )
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
-    return f"wrote {target.relative_to(root)} ({len(content)} chars)"
+    return f"wrote {target.relative_to(VAULT_ROOT.resolve())} ({len(content)} chars)"
 
 
 # --- Proposals: the write path to user state (queued, never auto-applied) ---
 
-PROPOSALS_DIR = VAULT_ROOT / ASSISTANT_ROOT / "Proposals"
+# A top-level vault folder, deliberately OUTSIDE '00 - Assistant/'. assistant_write
+# is confined to the assistant area, so it cannot reach this queue — the only way
+# a proposal file comes to exist is this typed tool (which forces status=pending),
+# and the only actor who can flip a proposal to 'approved' is the user editing in
+# Obsidian. The separation is access-controlled, not honor-code.
+PROPOSALS_ROOT = "00 - Proposals"
+PROPOSALS_DIR = VAULT_ROOT / PROPOSALS_ROOT
 
 
 @mcp.tool()
@@ -217,8 +226,8 @@ def propose(
 ) -> str:
     """Queue a proposed change to user state for the user to approve.
 
-    This is the ONLY way to change anything outside '00 - Assistant/'. It does
-    NOT apply the change — it writes a pending proposal the user reviews and
+    This is the ONLY way to change user state. It does NOT apply the change —
+    it writes a pending proposal (to '00 - Proposals/') the user reviews and
     approves in Obsidian; a separate privileged step applies approved ones.
     Emit ONE change per call (one todo, one event); split unrelated changes
     into separate proposals so each can be approved independently.
@@ -261,7 +270,7 @@ def propose(
         ) from e
     return (
         f"queued proposal {path.name} (status: pending). It awaits your approval in "
-        f"'{ASSISTANT_ROOT}/Proposals/'; nothing changes until you approve it."
+        f"'{PROPOSALS_ROOT}/'; nothing changes until you approve it."
     )
 
 
