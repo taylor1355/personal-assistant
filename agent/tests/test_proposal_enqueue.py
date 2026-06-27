@@ -303,6 +303,36 @@ def test_parse_proposal_rejects_missing_change_section() -> None:
         parse_proposal(md, "check-off-gym-todo")
 
 
+def test_destination_emitted_and_roundtrips_for_move() -> None:
+    p = Proposal(
+        frontmatter=ProposalFrontmatter(
+            proposed_at=datetime(2026, 4, 24, 14, 30, tzinfo=UTC),
+            agent="intake_agent",
+            action=Action.vault_move,
+            target="05 - Ideas/draft.md",
+            destination="03 - Personal Projects/draft.md",
+        ),
+        body=ProposalBody(
+            intent="Move the draft into projects.",
+            reasoning="It graduated from idea to active project.",
+            change="move 05 - Ideas/draft.md -> 03 - Personal Projects/draft.md",
+        ),
+        slug="move-draft-to-projects",
+    )
+    md = p.to_markdown()
+    assert "\ndestination: 03 - Personal Projects/draft.md\n" in md
+    assert parse_proposal(md, p.slug) == p
+
+
+def test_destination_absent_from_markdown_when_none() -> None:
+    assert "\ndestination:" not in _sample().to_markdown()
+
+
+def test_build_proposal_passes_destination() -> None:
+    p = _build(action="vault_move", destination="03 - Personal Projects/x.md", mode=None)
+    assert p.frontmatter.destination == "03 - Personal Projects/x.md"
+
+
 def test_parse_proposal_revalidates_closed_schema() -> None:
     # A drifted/tampered file with an unknown frontmatter key must not parse —
     # the applier's authoritative re-check, not just the emit-time check.

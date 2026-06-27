@@ -22,6 +22,7 @@ class Action(str, Enum):  # noqa: UP042
     vault_edit = "vault_edit"
     vault_create = "vault_create"
     vault_delete = "vault_delete"
+    vault_move = "vault_move"
     calendar_create = "calendar_create"
     calendar_update = "calendar_update"
     calendar_delete = "calendar_delete"
@@ -62,6 +63,9 @@ class ProposalFrontmatter(BaseModel):
     agent: str = Field(min_length=1)
     action: Action
     target: str = Field(min_length=1)
+    # Second path for vault_move (the move/rename destination). For ``target``
+    # as source, ``destination`` is where it lands. Unused by other actions.
+    destination: str | None = None
     status: Status = Status.pending
     mode: Mode | None = None
 
@@ -111,6 +115,8 @@ class Proposal(BaseModel):
         lines.append(f"agent: {fm.agent}")
         lines.append(f"action: {fm.action.value}")
         lines.append(f"target: {_yaml_quote(fm.target)}")
+        if fm.destination is not None:
+            lines.append(f"destination: {_yaml_quote(fm.destination)}")
         lines.append(f"status: {fm.status.value}")
         if fm.mode is not None:
             lines.append(f"mode: {fm.mode.value}")

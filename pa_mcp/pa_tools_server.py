@@ -222,6 +222,7 @@ def propose(
     change: str,
     slug: str,
     mode: str | None = None,
+    destination: str | None = None,
     notes: str | None = None,
 ) -> str:
     """Queue a proposed change to user state for the user to approve.
@@ -232,20 +233,25 @@ def propose(
     Emit ONE change per call (one todo, one event); split unrelated changes
     into separate proposals so each can be approved independently.
 
-    action: one of vault_edit, vault_create, vault_delete, calendar_create,
-        calendar_update, calendar_delete, email_draft, email_label,
-        email_archive.
+    action: one of vault_edit, vault_create, vault_move, vault_delete,
+        calendar_create, calendar_update, calendar_delete, email_draft,
+        email_label, email_archive.
     target: what the change acts on — a vault path relative to the vault root
         for vault_*, a calendar event id for calendar_*, a Gmail id for email_*.
+        For vault_move this is the SOURCE path (file or folder).
     intent: one human sentence — what changes if the user approves.
     reasoning: why now. Quote the evidence (the journal line, the event) that
         triggered this; use [[wiki-links]] for vault sources.
-    change: the exact change — a fenced unified diff (vault_edit, mode='diff'),
-        full file content (vault_create / vault_edit mode='replace'), or the API
-        payload (calendar_*/email_*). Never describe it vaguely.
+    change: the exact change — full file content (vault_create, or vault_edit
+        with mode='replace'), or the API payload (calendar_*/email_*). For
+        vault_move/vault_delete, a one-line note of what moves/goes. Never
+        describe a content change vaguely. (vault_edit mode='diff' is not yet
+        applied — use mode='replace' with the full new file content.)
     slug: kebab-case, <=40 chars, summarizing the change (e.g.
         'check-off-gym-todo').
-    mode: for vault_edit only — 'diff' or 'replace'. Omit otherwise.
+    mode: for vault_edit only — use 'replace' (full new content). Omit otherwise.
+    destination: for vault_move only — the destination vault path (where target
+        lands). Omit for every other action.
     notes: optional — ambiguity, alternatives considered, or follow-ups.
     """
     try:
@@ -257,6 +263,7 @@ def propose(
             change=change,
             slug=slug,
             mode=mode,
+            destination=destination,
             notes=notes,
             now=datetime.now(UTC),
         )

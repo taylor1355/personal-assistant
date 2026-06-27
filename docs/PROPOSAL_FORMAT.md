@@ -29,22 +29,24 @@ proposed_at: 2026-04-24T14:30:00Z          # ISO 8601 UTC
 agent: journal_agent                        # subagent that drafted this
 action: vault_edit                          # one of the registered types below
 target: "02 - Todos/01 - Short Term Todos.md"   # path, ID, or other identifier per action
+destination: "06 - Archive/Done.md"         # vault_move only — where target lands; omit otherwise
 status: pending                             # pending | approved | rejected | applied | failed
-mode: diff                                  # action-specific; omit if not applicable
+mode: replace                               # action-specific; omit if not applicable
 ---
 ```
 
-All fields are required except `mode`. The executor rejects proposals with extra unknown keys to prevent silent schema drift.
+All fields are required except `destination` and `mode` (action-specific). The applier rejects proposals with extra unknown keys to prevent silent schema drift.
 
 ## Registered action types
 
-Only these are supported. Adding a new type requires a PR that updates both the Python tool (schema) and the Go executor (validator + adapter).
+Only these are supported. Adding a new type requires a PR that updates the Python schema (`models.py`), the propose tool, and the applier adapter together.
 
 | `action` | Target kind | Body must contain |
 |---|---|---|
-| `vault_edit` | Vault file path (relative to vault root) | Unified diff OR full replacement text; set `mode: diff` or `mode: replace` |
+| `vault_edit` | Vault file path (relative to vault root) | Full replacement text with `mode: replace`. (`mode: diff` — applying a reviewed unified diff — is planned, see PA-25; not yet applied.) |
 | `vault_create` | Vault file path (must not exist) | Full file content |
-| `vault_delete` | Vault file path (must exist) | Reason in body; executor moves to `00 - Assistant/Trash/`, not hard delete |
+| `vault_move` | Source vault path (file or folder, must exist) in `target`; destination in `destination` (must not exist) | One-line note of what moves. Moving a folder moves its whole subtree — the unit for vault refactors |
+| `vault_delete` | Vault file path (must exist) | Reason in body; applier moves to `00 - Assistant/Trash/`, not hard delete |
 | `calendar_create` | Calendar name + event object | Event fields per Google Calendar API |
 | `calendar_update` | Calendar event ID | Fields to change |
 | `calendar_delete` | Calendar event ID | Reason |
