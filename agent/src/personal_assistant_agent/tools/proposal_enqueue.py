@@ -40,6 +40,7 @@ def build_proposal(
     now: datetime,
     agent: str = "orchestrator",
     mode: str | None = None,
+    destination: str | None = None,
     notes: str | None = None,
 ) -> Proposal:
     """Assemble a validated ``Proposal`` from primitive (string) tool inputs.
@@ -49,7 +50,8 @@ def build_proposal(
     naming the offending input. The returned ``Proposal`` is fully validated by
     its closed Pydantic schema (UTC timestamp, kebab slug, no extra keys); the
     caller passes it to ``enqueue``. ``now`` is taken explicitly so callers
-    control the timestamp (and tests stay deterministic).
+    control the timestamp (and tests stay deterministic). ``destination`` is the
+    move target for ``vault_move``; omit it for every other action.
     """
     return Proposal(
         frontmatter=ProposalFrontmatter(
@@ -57,6 +59,7 @@ def build_proposal(
             agent=agent,
             action=Action(action),
             target=target,
+            destination=destination,
             mode=Mode(mode) if mode is not None else None,
         ),
         body=ProposalBody(intent=intent, reasoning=reasoning, change=change, notes=notes),

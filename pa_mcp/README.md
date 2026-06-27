@@ -25,7 +25,7 @@ outside `00 - Assistant/`; writes a pending proposal, never applies it).
 ```bash
 cd pa_mcp
 uv venv --python 3.11
-uv pip install mcp
+uv pip install mcp pyyaml   # pyyaml: the propose tool parses/builds Proposal frontmatter
 ```
 
 Hermes launches the server over stdio. Required env (set in the Hermes config):

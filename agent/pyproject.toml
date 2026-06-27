@@ -37,6 +37,9 @@ dev = [
 
 [project.scripts]
 personal-assistant-agent = "personal_assistant_agent.cli:app"
+# Host-side proposal applier — a SEPARATE process from the agent. Holds vault
+# write access; run by cron or manually, never exposed as an agent tool.
+apply-proposals = "personal_assistant_agent.applier:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/personal_assistant_agent"]
