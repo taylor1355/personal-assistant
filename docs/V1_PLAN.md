@@ -33,13 +33,13 @@ Cross from read-mostly → **first real writes**, via the proposal→apply path,
 
 The lockdown means the orchestrator literally cannot write user state. v1 adds the *approved-write* path without ever handing the LLM write creds:
 
-1. **`propose` tool** (new pa-tools tool): the agent emits a structured proposal — reuse the existing `Proposal` Pydantic model (`agent/src/personal_assistant_agent/models.py`, `Action` enum) + `docs/PROPOSAL_FORMAT.md`. Writes the proposal to `00 - Assistant/Proposals/` (assistant area; no user-state mutation).
+1. **`propose` tool** (new pa-tools tool): the agent emits a structured proposal — reuse the existing `Proposal` Pydantic model (`agent/src/personal_assistant_agent/models.py`, `Action` enum) + `docs/PROPOSAL_FORMAT.md`. Writes the proposal to `00 - Proposals/` — a top-level vault folder *outside* `00 - Assistant/`, so `assistant_write` cannot reach it; only this typed tool (always `status: pending`) writes the queue, and only the user writes `status: approved`. Access-controlled, not honor-code.
 2. **The applier (PA-3)** — the old Go executor, reborn as a deterministic, non-LLM `apply_proposals.py`: reads *approved* proposals, re-validates against the closed schema, applies via typed adapters (`vault_edit/create`, `gmail_modify`, `calendar_create`), transitions to applied/failed, audit-logs. **It holds the write creds; the orchestrator never does.** That's the trust boundary — credential separation in one process.
 3. **Approval UX** — recommended: **Telegram** (the bot presents the proposal; user replies approve/reject). Alternative: flip a `status:` field in the proposal frontmatter from Obsidian. Decide early.
 
 ## v1 build sequence
 
-1. **`propose` tool + proposal queue** — wire the `Proposal` schema; agent writes to `00 - Assistant/Proposals/`. Validate the closed schema.
+1. **`propose` tool + proposal queue** — wire the `Proposal` schema; agent writes to `00 - Proposals/` (outside the agent's writable area). Validate the closed schema.
 2. **Applier** (`apply_proposals.py`) + first adapter (`vault_edit`, lowest-stakes) + audit log. Prove the full **propose → approve → apply** loop on a vault edit.
 3. **Approval flow** — Telegram approve/reject (or vault status-flip); applier triggers on approval.
 4. **Google reads (PA-14)** — ⚠️ a bare "API key" cannot read private Gmail/Calendar; this needs **OAuth2** (Google Cloud project + OAuth client + one-time consent → refresh token in `HERMES_HOME/.env` or a creds file), read-only scopes. Add `gmail_read` + `calendar_read` tools (custom, or a Google MCP server).

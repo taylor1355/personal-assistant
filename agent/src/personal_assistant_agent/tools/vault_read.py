@@ -16,6 +16,28 @@ class VaultPathError(ValueError):
     """Raised when a requested path would escape the vault root."""
 
 
+def resolve_within(root: Path, relative_path: str) -> Path:
+    """Resolve ``relative_path`` under ``root``, rejecting any escape.
+
+    Absolute paths, ``..`` traversal, and symlinks that resolve outside
+    ``root`` all raise ``VaultPathError``. Returns the resolved absolute path,
+    which need not exist yet — callers that write create it.
+
+    This is the single place the vault's path confinement lives. Both the
+    read tools and the assistant-area write tool route through it, so the
+    boundary is enforced (and tested) once rather than re-implemented per
+    call site where a subtle prefix bug could slip in.
+    """
+    rel = Path(relative_path)
+    if rel.is_absolute():
+        raise VaultPathError(f"path must be relative, got {relative_path!r}")
+    root = root.resolve()
+    candidate = (root / rel).resolve()
+    if not is_within(candidate, root):
+        raise VaultPathError(f"resolved path {candidate} is outside {root}")
+    return candidate
+
+
 def read_vault_file(relative_path: str, vault_root: Path | None = None) -> str:
     """Read a UTF-8 file under the vault root.
 
@@ -24,17 +46,8 @@ def read_vault_file(relative_path: str, vault_root: Path | None = None) -> str:
     rejected — the tool is read-only, but a traversal bug would still leak
     host filesystem content into prompts.
     """
-    root = (vault_root or _default_root()).resolve()
-    rel = Path(relative_path)
-    if rel.is_absolute():
-        raise VaultPathError(f"relative_path must be relative: {relative_path!r}")
-
-    candidate = (root / rel).resolve()
-    if not _is_within(candidate, root):
-        raise VaultPathError(
-            f"resolved path {candidate} is outside vault root {root}"
-        )
-    return candidate.read_text(encoding="utf-8")
+    root = vault_root or _default_root()
+    return resolve_within(root, relative_path).read_text(encoding="utf-8")
 
 
 def _default_root() -> Path:
@@ -42,7 +55,13 @@ def _default_root() -> Path:
     return Path(env) if env else DEFAULT_VAULT_ROOT
 
 
-def _is_within(candidate: Path, root: Path) -> bool:
+def is_within(candidate: Path, root: Path) -> bool:
+    """True if ``candidate`` is ``root`` itself or nested under it.
+
+    Uses path-segment containment (``relative_to``), not string prefixing, so
+    a sibling like ``00 - AssistantEvil`` is NOT considered within
+    ``00 - Assistant``. Both paths should already be resolved.
+    """
     try:
         candidate.relative_to(root)
     except ValueError:

@@ -73,7 +73,9 @@ The agent container has no write credentials to GitHub, Gmail, Calendar, the use
 
 The central invariant for irreversible mutation. See [PROPOSAL_FORMAT.md](PROPOSAL_FORMAT.md) for the file format and validation rules.
 
-**Shape:** the agent writes a markdown file under `00 - Assistant/Proposals/YYYY-MM-DD-HHMM-<slug>.md` with frontmatter declaring `action`, `target`, and `status: pending`. The user reviews in Obsidian and approves by flipping `status` to `approved`. The executor watches the folder, validates, applies via the typed adapter, and transitions to `applied` or `failed`. Applied proposals are moved to `Proposals/Applied/YYYY-MM/`.
+**Shape:** the agent writes a markdown file under `00 - Proposals/YYYY-MM-DD-HHMM-<slug>.md` with frontmatter declaring `action`, `target`, and `status: pending`. The user reviews in Obsidian and approves by flipping `status` to `approved`. The applier watches the folder, validates, applies via the typed adapter, and transitions to `applied` or `failed`. Applied proposals are moved to `00 - Proposals/Applied/YYYY-MM/`.
+
+`00 - Proposals/` sits *outside* `00 - Assistant/` on purpose: the agent's general write tool is confined to `00 - Assistant/`, so it physically cannot create or approve a proposal — the only writer of the queue is the typed `propose` tool (always `status: pending`), and the only writer of `status: approved` is the user. Were the queue inside the agent's writable area, the boundary would rest on the agent choosing not to forge an approved proposal; here it rests on access control.
 
 **Why markdown:** the user reviews in Obsidian directly. No extra UI, no extra database. The vault is the queue.
 

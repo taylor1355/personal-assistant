@@ -6,10 +6,10 @@ The agent-side tool that writes proposals is the Hermes `propose` MCP tool (`pa_
 
 ## Location and lifecycle
 
-- **Written to**: `00 - Assistant/Proposals/` in the agent's vault copy (the `propose` tool targets this assistant-owned area, so emitting a proposal is itself never a user-state mutation). `enqueue` otherwise falls back to `$PROPOSALS_PATH` when no directory is passed.
-- **User reviews** the file in Obsidian (the sync service exposes the proposals folder under `00 - Assistant/Proposals/` in the real vault).
+- **Written to**: `00 - Proposals/` — a top-level vault folder, deliberately *outside* `00 - Assistant/`. The agent's general write tool (`assistant_write`) is confined to `00 - Assistant/`, so it cannot reach this queue. The only way a proposal file exists is the typed `propose` tool, which always sets `status: pending`; the only actor who can write `status: approved` is the user. The separation is access-controlled, not honor-code. (`enqueue` falls back to `$PROPOSALS_PATH` when called without a directory.)
+- **User reviews** the file in Obsidian under `00 - Proposals/`.
 - **User approves** by editing frontmatter `status: pending → approved` (or `→ rejected`).
-- **Executor applies** approved proposals, transitions to `status: applied` (or `failed`) with a result block appended, then moves the file to `00 - Assistant/Proposals/Applied/YYYY-MM/`.
+- **Applier applies** approved proposals, transitions to `status: applied` (or `failed`) with a result block appended, then moves the file to `00 - Proposals/Applied/YYYY-MM/`.
 
 ## Filename
 
