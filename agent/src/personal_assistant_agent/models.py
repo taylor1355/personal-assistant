@@ -1,7 +1,8 @@
 """Pydantic models for proposals.
 
 Schema and semantics are the source of truth in ``docs/PROPOSAL_FORMAT.md``.
-Any change here requires a matching change on the Go executor side.
+``to_markdown`` (emit, used by the propose tool) and ``parse_proposal`` (read
+back, used by the applier) are inverses; any schema change must keep them so.
 """
 from __future__ import annotations
 
@@ -10,6 +11,7 @@ from datetime import UTC, datetime
 from enum import Enum
 from typing import Annotated
 
+import yaml
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 
@@ -128,6 +130,107 @@ class Proposal(BaseModel):
             lines.append(self.body.notes.strip())
         lines.append("")
         return "\n".join(lines)
+
+
+class ProposalParseError(ValueError):
+    """A proposal file is structurally malformed (bad frontmatter delimiters,
+    missing required body section). Distinct from ``ValidationError``, which a
+    well-formed-but-schema-invalid file raises. The applier catches both to
+    mark a proposal ``failed`` rather than crash the sweep."""
+
+
+_SECTION_KEYS = {
+    "Intent": "intent",
+    "Reasoning": "reasoning",
+    "Change": "change",
+    "Notes": "notes",
+}
+_HEADER_RE = re.compile(r"^##\s+(.+?)\s*$")
+
+
+def parse_proposal(text: str, slug: str) -> Proposal:
+    """Parse a proposal markdown file into a validated ``Proposal``.
+
+    The inverse of ``Proposal.to_markdown``. The closed Pydantic schema
+    re-validates on construction, so a tampered or drifted file raises here —
+    this is the applier's authoritative re-check before it touches user state.
+    ``slug`` comes from the filename (``YYYY-MM-DD-HHMM-<slug>.md``); it isn't
+    stored in the file body.
+
+    Raises ``ProposalParseError`` for structural damage and ``ValidationError``
+    for schema violations (unknown frontmatter key, non-UTC timestamp, ...).
+    """
+    frontmatter_text, body_text = _split_frontmatter(text)
+    raw = yaml.safe_load(frontmatter_text) or {}
+    if not isinstance(raw, dict):
+        raise ProposalParseError("frontmatter is not a key/value mapping")
+    raw = _normalize_proposed_at(raw)
+
+    sections = _split_body_sections(body_text)
+    for required in ("intent", "reasoning", "change"):
+        if required not in sections:
+            raise ProposalParseError(
+                f"missing required body section: ## {required.capitalize()}"
+            )
+
+    return Proposal(
+        frontmatter=ProposalFrontmatter.model_validate(raw),
+        body=ProposalBody(
+            intent=sections["intent"],
+            reasoning=sections["reasoning"],
+            change=sections["change"],
+            notes=sections.get("notes"),
+        ),
+        slug=slug,
+    )
+
+
+def _split_frontmatter(text: str) -> tuple[str, str]:
+    """Split ``---``-delimited YAML frontmatter from the markdown body."""
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        raise ProposalParseError("file does not start with '---' frontmatter")
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            return "\n".join(lines[1:i]), "\n".join(lines[i + 1 :])
+    raise ProposalParseError("unterminated frontmatter (no closing '---')")
+
+
+def _normalize_proposed_at(raw: dict[str, object]) -> dict[str, object]:
+    """YAML may parse the timestamp into a naive datetime; the schema requires
+    UTC. Attach UTC when tz-naive; leave strings for Pydantic to coerce."""
+    pa = raw.get("proposed_at")
+    if isinstance(pa, datetime) and pa.tzinfo is None:
+        return {**raw, "proposed_at": pa.replace(tzinfo=UTC)}
+    return raw
+
+
+def _split_body_sections(body: str) -> dict[str, str]:
+    """Map ``## Section`` headers to their stripped content.
+
+    Fence-aware: a ``## header`` inside a fenced code block (e.g. a markdown
+    file body in a ``vault_create`` Change) is content, not a section break.
+    """
+    sections: dict[str, str] = {}
+    current: str | None = None
+    buf: list[str] = []
+    in_fence = False
+    for line in body.splitlines():
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            buf.append(line)
+            continue
+        header = None if in_fence else _HEADER_RE.match(line)
+        if header and header.group(1) in _SECTION_KEYS:
+            if current is not None:
+                sections[current] = "\n".join(buf).strip()
+            current = _SECTION_KEYS[header.group(1)]
+            buf = []
+            continue
+        buf.append(line)
+    if current is not None:
+        sections[current] = "\n".join(buf).strip()
+    return sections
 
 
 def _yaml_quote(value: str) -> str:
