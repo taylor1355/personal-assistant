@@ -39,18 +39,18 @@ The lockdown means the orchestrator literally cannot write user state. v1 adds t
 
 ## v1 build sequence
 
-1. **`propose` tool + proposal queue** — wire the `Proposal` schema; agent writes to `00 - Proposals/` (outside the agent's writable area). Validate the closed schema.
-2. **Applier** (`apply_proposals.py`) + first adapter (`vault_edit`, lowest-stakes) + audit log. Prove the full **propose → approve → apply** loop on a vault edit.
-3. **Approval flow** — Telegram approve/reject (or vault status-flip); applier triggers on approval.
+1. **`propose` tool + proposal queue** — wire the `Proposal` schema; agent writes to `00 - Proposals/` (outside the agent's writable area). Validate the closed schema. ✅ done
+2. **Applier** (`personal_assistant_agent/applier.py`, `apply-proposals` entry point) + adapters (`vault_edit` replace, `vault_create`, `vault_move`) + audit log + `Applied/` archive. Full **propose → approve → apply** loop proven. ✅ done
+3. **Approval flow** — settled as the Obsidian **status-flip** (interim; eventual phone/web app per `project-approval-ux` memory). The applier runs as an **OS scheduled task** (`scripts/install_applier_task.ps1`), sweeping the queue on an interval — a host-side process separate from the Hermes gateway, so the agent never holds write creds.
 4. **Google reads (PA-14)** — ⚠️ a bare "API key" cannot read private Gmail/Calendar; this needs **OAuth2** (Google Cloud project + OAuth client + one-time consent → refresh token in `HERMES_HOME/.env` or a creds file), read-only scopes. Add `gmail_read` + `calendar_read` tools (custom, or a Google MCP server).
 5. **Inbox sorting (headline)** — classify inbox → `propose` Gmail label/archive changes → apply on approval (`gmail_modify` adapter). Replaces InboxZero. Start read-mostly (classify + surface in the briefing), graduate to apply.
 6. **Fold calendar + email into the daily briefing** — now it covers "all modalities" (the original want).
 
-## Open decisions to settle first
-- **Approval UX:** Telegram reply/buttons vs vault status-flip. (Rec: Telegram.)
-- **Google auth:** confirm OAuth2 (not a bare API key); scopes (`gmail.modify` for sorting, `calendar.readonly`).
-- **Applier trigger:** watch the approved-proposals folder? on-approval callback from Telegram? a cron sweep?
-- **Applier process:** a small standalone Python process holding creds (cleaner boundary) vs a privileged Hermes invocation. (Rec: standalone.)
+## Open decisions
+- ~~**Approval UX:**~~ settled: Obsidian status-flip now, phone/web app later.
+- ~~**Applier trigger:**~~ settled: interval sweep via OS scheduled task.
+- ~~**Applier process:**~~ settled: standalone (`apply-proposals`), holds creds, separate from the gateway.
+- **Google auth:** confirm OAuth2 (not a bare API key); scopes (`gmail.modify` for sorting, `calendar.readonly`). Email/inbox deprioritized — `calendar.readonly` first.
 
 ## Linear issues (post-pivot)
 **PA-3** in-process applier (keystone) · **PA-14** Calendar+Gmail read · **PA-9** vault intake → propose · **PA-11** Linear audit · **PA-5** pm/triage subagent · **PA-23** model benchmark. (PA-4/6/8/21 were canceled.)
