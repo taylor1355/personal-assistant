@@ -56,8 +56,16 @@ $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew
 
 Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
-Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings `
-  -Description "Applies approved proposals from the PA vault queue every $IntervalMinutes min." | Out-Null
+# A per-user task that runs as the current user does NOT require admin. Catch
+# the failure and explain rather than letting a raw access-denied surface.
+try {
+  Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings `
+    -Description "Applies approved proposals from the PA vault queue every $IntervalMinutes min." | Out-Null
+} catch {
+  Write-Error ("Failed to register '{0}': {1}" -f $TaskName, $_.Exception.Message)
+  Write-Host "If this was access-denied, retry from an elevated PowerShell."
+  exit 1
+}
 
 Write-Host "Registered '$TaskName': every $IntervalMinutes min"
 Write-Host "  $exe --vault-root `"$VaultRoot`""
