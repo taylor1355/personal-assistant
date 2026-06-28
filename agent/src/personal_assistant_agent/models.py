@@ -12,7 +12,14 @@ from enum import Enum
 from typing import Annotated
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 
 # Note: ruff's UP042 wants StrEnum, but Mode.replace would shadow str.replace
@@ -75,6 +82,15 @@ class ProposalFrontmatter(BaseModel):
         if v.tzinfo is None or v.tzinfo.utcoffset(v) != UTC.utcoffset(v):
             raise ValueError("proposed_at must be UTC (tzinfo=timezone.utc)")
         return v
+
+    @model_validator(mode="after")
+    def _destination_required_for_move(self) -> ProposalFrontmatter:
+        # A vault_move with no destination is incomplete; reject it at
+        # construction so the agent gets feedback at propose time rather than
+        # the proposal failing later in the applier.
+        if self.action is Action.vault_move and not self.destination:
+            raise ValueError("destination is required for vault_move")
+        return self
 
 
 class ProposalBody(BaseModel):
@@ -214,19 +230,28 @@ def _normalize_proposed_at(raw: dict[str, object]) -> dict[str, object]:
 def _split_body_sections(body: str) -> dict[str, str]:
     """Map ``## Section`` headers to their stripped content.
 
-    Fence-aware: a ``## header`` inside a fenced code block (e.g. a markdown
-    file body in a ``vault_create`` Change) is content, not a section break.
+    Fence-aware (CommonMark): a ``## header`` inside a fenced code block — e.g.
+    a markdown file body in a ``vault_create`` Change — is content, not a
+    section break. Fence tracking records the fence character and run length so
+    a shorter inner fence (``` inside a ```` block) does not close the outer
+    one; a fence closes only on a same-char run at least as long as the opener.
     """
     sections: dict[str, str] = {}
     current: str | None = None
     buf: list[str] = []
-    in_fence = False
+    fence_char: str | None = None
+    fence_len = 0
     for line in body.splitlines():
-        if line.lstrip().startswith("```"):
-            in_fence = not in_fence
+        opener = _fence_run(line)
+        if opener is not None:
+            char, length = opener
+            if fence_char is None:
+                fence_char, fence_len = char, length
+            elif char == fence_char and length >= fence_len:
+                fence_char, fence_len = None, 0
             buf.append(line)
             continue
-        header = None if in_fence else _HEADER_RE.match(line)
+        header = None if fence_char is not None else _HEADER_RE.match(line)
         if header and header.group(1) in _SECTION_KEYS:
             if current is not None:
                 sections[current] = "\n".join(buf).strip()
@@ -237,6 +262,15 @@ def _split_body_sections(body: str) -> dict[str, str]:
     if current is not None:
         sections[current] = "\n".join(buf).strip()
     return sections
+
+
+def _fence_run(line: str) -> tuple[str, int] | None:
+    """If ``line`` opens/closes a code fence, return (fence_char, run_length)."""
+    stripped = line.lstrip()
+    for char in ("`", "~"):
+        if stripped.startswith(char * 3):
+            return char, len(stripped) - len(stripped.lstrip(char))
+    return None
 
 
 def _yaml_quote(value: str) -> str:

@@ -240,6 +240,38 @@ def test_tampered_approved_proposal_fails_revalidation(tmp_path: Path) -> None:
     assert (vault / "t.md").read_text(encoding="utf-8") == "orig"
 
 
+# --- robustness: status parsing and fence unwrapping ---
+
+
+def test_approved_status_with_quotes_and_comment_is_applied(tmp_path: Path) -> None:
+    vault = _vault(tmp_path)
+    (vault / "t.md").write_text("orig", encoding="utf-8")
+    queue = vault / "00 - Proposals"
+    path = _write(queue, action=Action.vault_edit, target="t.md", mode=Mode.replace,
+                  change=_fenced("new"), slug="quoted-status")
+    text = path.read_text(encoding="utf-8").replace(
+        "status: approved", 'status: "approved"  # reviewed in Obsidian'
+    )
+    path.write_text(text, encoding="utf-8")
+
+    outcomes = sweep(queue, vault, NOW)
+
+    assert [o.status for o in outcomes] == [Status.applied]
+    assert (vault / "t.md").read_text(encoding="utf-8") == "new"
+
+
+def test_vault_create_unwraps_longer_outer_fence(tmp_path: Path) -> None:
+    vault = _vault(tmp_path)
+    queue = vault / "00 - Proposals"
+    inner = "# Note\n\n```python\nprint(1)\n```"
+    _write(queue, action=Action.vault_create, target="05 - Ideas/note.md",
+           change=f"````markdown\n{inner}\n````", slug="note-with-code")
+
+    sweep(queue, vault, NOW)
+
+    assert (vault / "05 - Ideas" / "note.md").read_text(encoding="utf-8") == inner
+
+
 # --- audit log ---
 
 

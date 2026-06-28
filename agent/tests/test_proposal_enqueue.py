@@ -328,6 +328,39 @@ def test_destination_absent_from_markdown_when_none() -> None:
     assert "\ndestination:" not in _sample().to_markdown()
 
 
+def test_vault_move_without_destination_rejected() -> None:
+    # The model validator must reject an incomplete move at construction.
+    with pytest.raises(ValidationError):
+        ProposalFrontmatter(
+            proposed_at=datetime(2026, 4, 24, 14, 30, tzinfo=UTC),
+            agent="intake_agent",
+            action=Action.vault_move,
+            target="05 - Ideas/draft.md",
+        )
+
+
+def test_parse_proposal_preserves_nested_fences_in_change() -> None:
+    # A note body (vault_create) can hold its own ``` code block; wrapping it in
+    # a longer ```` fence must round-trip — the inner block and any '## header'
+    # inside it stay content, not section breaks.
+    change = "````markdown\n# Title\n\n## Heading\n\n```python\nx = 1\n```\n````"
+    p = Proposal(
+        frontmatter=ProposalFrontmatter(
+            proposed_at=datetime(2026, 4, 24, 14, 30, tzinfo=UTC),
+            agent="intake_agent",
+            action=Action.vault_create,
+            target="05 - Ideas/note.md",
+            mode=Mode.replace,
+        ),
+        body=ProposalBody(intent="Create note.", reasoning="User asked.", change=change),
+        slug="note-with-code",
+    )
+    parsed = parse_proposal(p.to_markdown(), p.slug)
+    assert "## Heading" in parsed.body.change
+    assert "```python" in parsed.body.change
+    assert parsed == p
+
+
 def test_build_proposal_passes_destination() -> None:
     p = _build(action="vault_move", destination="03 - Personal Projects/x.md", mode=None)
     assert p.frontmatter.destination == "03 - Personal Projects/x.md"

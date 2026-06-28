@@ -22,6 +22,8 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shutil
+import sys
 import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -68,7 +70,14 @@ def sweep(
     pending/rejected/applied/failed files are left untouched."""
     outcomes: list[ApplyOutcome] = []
     for path in _candidate_files(proposals_dir):
-        outcome = _process_one(path, proposals_dir, vault_root, now)
+        try:
+            outcome = _process_one(path, proposals_dir, vault_root, now)
+        except Exception as e:
+            # Broad by design: the sweep is the top-level resilience boundary.
+            # A single proposal failing even mid-transition (an unlink or
+            # archive write erroring) must not stop the rest of the queue.
+            print(f"applier: ERROR processing {path.name}: {e}", file=sys.stderr)
+            continue
         if outcome is None:
             continue
         outcomes.append(outcome)
@@ -156,7 +165,9 @@ def _apply_vault_move(proposal: Proposal, vault_root: Path, proposals_dir: Path)
     if dst.exists():
         raise ApplyError(f"destination already exists, refusing to overwrite: {fm.destination}")
     dst.parent.mkdir(parents=True, exist_ok=True)
-    src.rename(dst)  # file or whole subtree, atomic within the vault filesystem
+    # shutil.move (not Path.rename) so a vault spanning mount points — a folder
+    # symlinked to another drive — falls back to copy+delete instead of EXDEV.
+    shutil.move(str(src), str(dst))  # file or whole subtree
     return f"moved {fm.target} -> {fm.destination}"
 
 
@@ -232,8 +243,12 @@ def _frontmatter_status(text: str) -> Status | None:
         if line.strip() == "---":
             return None
         if line.startswith("status:"):
+            # Tolerate valid YAML the user might hand-write: a trailing
+            # `# comment` and surrounding quotes. Getting this wrong would
+            # silently skip an approved proposal.
+            value = line[len("status:") :].split("#", 1)[0].strip().strip("'\"")
             try:
-                return Status(line[len("status:") :].strip())
+                return Status(value)
             except ValueError:
                 return None
     return None
@@ -249,18 +264,37 @@ def _slug_from_filename(name: str) -> str:
 def _unwrap_fence(change: str) -> str:
     """Return the inner content of a single fenced code block, else the text
     as-is. vault_create / vault_edit replace bodies wrap the file content in a
-    ``` fence per PROPOSAL_FORMAT; the file on disk should not include it."""
+    fence per PROPOSAL_FORMAT; the file on disk should not include it.
+
+    Matches the closing fence by character and length, so a longer outer fence
+    (```` wrapping a note that itself contains a ``` block) unwraps correctly
+    and only strips the outer pair."""
     stripped = change.strip()
-    if not stripped.startswith("```"):
+    if not (stripped.startswith("```") or stripped.startswith("~~~")):
         return change
     lines = stripped.splitlines()
-    if len(lines) >= 2 and lines[-1].strip() == "```":
+    if len(lines) < 2:
+        return change
+    opener = lines[0].strip()
+    char = opener[0]
+    open_len = len(opener) - len(opener.lstrip(char))
+    closer = lines[-1].strip()
+    if closer and set(closer) == {char} and len(closer) >= open_len:
         return "\n".join(lines[1:-1])
     return change
 
 
 def _atomic_write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    # Preserve the existing file's mode across the replace — mkstemp creates
+    # the temp file 0o600, which would otherwise silently tighten an edited
+    # vault file's permissions.
+    original_mode: int | None = None
+    if path.exists():
+        try:
+            original_mode = path.stat().st_mode
+        except OSError:
+            original_mode = None
     fd, tmp_str = tempfile.mkstemp(prefix=".apply-", suffix=".tmp", dir=str(path.parent))
     tmp = Path(tmp_str)
     try:
@@ -268,6 +302,11 @@ def _atomic_write(path: Path, content: str) -> None:
             f.write(content)
             f.flush()
             os.fsync(f.fileno())
+        if original_mode is not None:
+            try:
+                os.chmod(tmp, original_mode)
+            except OSError:
+                pass
         os.replace(tmp, path)
     except BaseException:
         tmp.unlink(missing_ok=True)
