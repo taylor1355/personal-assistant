@@ -20,7 +20,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import ModuleType
 
@@ -29,6 +29,10 @@ from pydantic import ValidationError
 
 REPO_ROOT = Path(os.environ.get("PA_REPO_ROOT", "")).expanduser()
 VAULT_ROOT = Path(os.environ.get("VAULT_ROOT", "")).expanduser()
+# Read-only Google Calendar (optional): a token written by scripts/
+# google_oauth_setup.py. Absent → calendar_read degrades to a clear message.
+GOOGLE_CALENDAR_TOKEN = os.environ.get("GOOGLE_CALENDAR_TOKEN", "")
+GOOGLE_CALENDAR_ID = os.environ.get("GOOGLE_CALENDAR_ID", "primary")
 
 
 def _load_module(name: str, path: Path) -> ModuleType:
@@ -70,6 +74,7 @@ _linear = _linear_cli.LinearClient(repo_root=REPO_ROOT)
 # post-pivot, so putting agent/src on the path and importing them directly is
 # clean — no _load_module dance needed here.
 sys.path.insert(0, str(REPO_ROOT / "agent" / "src"))
+from personal_assistant_agent import google_calendar  # noqa: E402
 from personal_assistant_agent.tools.proposal_enqueue import (  # noqa: E402
     ProposalCollisionError,
     build_proposal,
@@ -178,6 +183,35 @@ def today() -> str:
     """Today's local date and weekday, e.g. '2026-06-22 (Monday)'. Use this to
     date briefings and reason about 'today'/'this week' — never guess the date."""
     return datetime.now().strftime("%Y-%m-%d (%A)")
+
+
+@mcp.tool()
+def calendar_read(days: int = 1) -> str:
+    """Upcoming Google Calendar events for the next `days` days (default 1 =
+    next 24h), time-ordered and read-only. Use it to ground the briefing and
+    reason about what's coming up. Returns a clear message if calendar isn't
+    configured; never writes — calendar changes go through `propose`."""
+    try:
+        from google.oauth2.credentials import Credentials  # lazy: optional dep
+        from googleapiclient.discovery import build
+    except ImportError:
+        return "calendar unavailable: Google libraries not installed in the server env"
+    if not GOOGLE_CALENDAR_TOKEN or not Path(GOOGLE_CALENDAR_TOKEN).is_file():
+        return "calendar not configured: no token (run scripts/google_oauth_setup.py)"
+    try:
+        creds = Credentials.from_authorized_user_file(
+            GOOGLE_CALENDAR_TOKEN, [google_calendar.CALENDAR_READONLY_SCOPE]
+        )
+        service = build("calendar", "v3", credentials=creds, cache_discovery=False)
+        now = datetime.now(UTC)
+        events = google_calendar.upcoming_events(
+            service, now, now + timedelta(days=max(1, days)), calendar_id=GOOGLE_CALENDAR_ID
+        )
+    except Exception as e:
+        # External-service boundary: surface a controlled message to the agent
+        # rather than crashing the wake on a calendar/auth hiccup.
+        return f"calendar read failed: {e}"
+    return google_calendar.format_events(events)
 
 
 @mcp.tool()

@@ -11,13 +11,14 @@ invariant is enforced by **toolset lockdown** — the orchestrator is given only
 `mcp-pa-tools` (+ skills/memory), never Hermes' `terminal`/`file` toolsets, so
 it cannot mutate user state outside these typed tools.
 
-## Tools (15)
+## Tools (16)
 
 `vault_read`, `vault_list` · `linear_board`, `linear_todo`, `linear_next`,
 `linear_issue`, `linear_search` (reads) · `linear_create`, `linear_comment`,
 `linear_set_state`, `linear_set_priority`, `linear_link` (planning writes) ·
-`today`, `assistant_write` (assistant-owned vault area, `00 - Assistant/`) ·
-`propose` (queues a change to user state for approval — the only write path
+`today`, `calendar_read` (read-only Google Calendar; degrades gracefully if
+unconfigured) · `assistant_write` (assistant-owned vault area, `00 - Assistant/`)
+· `propose` (queues a change to user state for approval — the only write path
 outside `00 - Assistant/`; writes a pending proposal, never applies it).
 
 ## Dev setup
@@ -25,13 +26,30 @@ outside `00 - Assistant/`; writes a pending proposal, never applies it).
 ```bash
 cd pa_mcp
 uv venv --python 3.11
-uv pip install mcp pyyaml   # pyyaml: the propose tool parses/builds Proposal frontmatter
+uv pip install mcp pyyaml                              # core
+uv pip install google-auth-oauthlib google-api-python-client   # calendar_read (optional)
 ```
 
 Hermes launches the server over stdio. Required env (set in the Hermes config):
 
 - `PA_REPO_ROOT` — a PA checkout containing `tools/linear-pm` + `.env` (Linear creds)
 - `VAULT_ROOT` — the Obsidian vault root (read-only access)
+- `GOOGLE_CALENDAR_TOKEN` — *(optional)* path to the read-only Calendar token
+  from `scripts/google_oauth_setup.py`; without it `calendar_read` returns a
+  "not configured" message. `GOOGLE_CALENDAR_ID` defaults to `primary`.
+
+### Calendar (read-only) setup
+
+```bash
+# 1. Google Cloud Console: create a project, ENABLE the Google Calendar API,
+#    create an OAuth client ID (Desktop app), download client_secret.json.
+# 2. One-time consent (cross-device: open the printed URL anywhere, approve,
+#    paste back the localhost redirect URL it bounces to):
+python scripts/google_oauth_setup.py start \
+  --client-secret <client_secret.json> --token-out "$HERMES_HOME/google_calendar_token.json"
+python scripts/google_oauth_setup.py finish "<pasted redirect URL>"
+# 3. Point the server at the token via GOOGLE_CALENDAR_TOKEN (above).
+```
 
 Wiring check (no Hermes needed):
 
