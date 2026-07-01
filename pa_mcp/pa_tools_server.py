@@ -139,6 +139,15 @@ def linear_search(query: str) -> str:
     return _linear.search(query)
 
 
+@mcp.tool()
+def linear_personal() -> str:
+    """Taylor's PERSONAL life-tasks — the Linear 'Personal' project, grouped by
+    state (Backlog / Todo / In Progress / ...). This is the source for the daily
+    personal briefing. Excludes assistant/dev issues, which live outside this
+    project and get their own dev briefing."""
+    return _linear.project("Personal")
+
+
 # --- Linear: planning writes (low-stakes, auto-applied per the architecture) ---
 
 @mcp.tool()
