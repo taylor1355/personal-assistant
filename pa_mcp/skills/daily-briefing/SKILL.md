@@ -12,40 +12,38 @@ dispatch efficiently — but only with facts you actually pulled from tools.
 
 ## Gather FIRST — do not skip
 
-**You MUST call `today`, `calendar_read`, `linear_board`, and `linear_next`,
-plus at least one `vault_list`, BEFORE writing anything.** Compose only from
-what they actually return. A section is "nothing today" ONLY when its tool
-genuinely returned nothing — if `linear_board` shows in-progress or backlog
-issues, they MUST appear (do not write "none" when the tools returned data).
-Never invent issues, todos, dates, or events.
+This is Taylor's **personal** briefing — his life-tasks + calendar. Assistant/dev
+issues (the PA-dev backlog) are **out of scope** here; they get a separate dev
+briefing. **You MUST call `today`, `calendar_read`, and `linear_personal` BEFORE
+writing anything.** Compose only from what the tools return; a section is
+"nothing today" ONLY when its tool genuinely returned nothing. Never invent
+tasks, dates, or events.
 
 Steps:
 
 1. `today` → the date; use it for the filename and any "today/this week" reasoning.
-2. `calendar_read` → today's events (read-only). If it returns "No events." say
-   the day is clear; if it returns a "not configured/failed" message, say
-   calendar is unavailable in one line — never invent events.
-3. `linear_board` and `linear_next` → what's in progress, what's on deck, and the
-   single highest-priority unblocked issue.
-4. `vault_list "02 - Todos"` and `vault_list "04 - Plans"` → active todos and
-   upcoming/dated plans. `vault_read` the 1–2 files most relevant to today for
-   specifics. (Folder+filename carry the meaning — there are no tags/frontmatter.)
-5. Optional, if cheap: skim `06 - Learning` for a relevant micro-lesson.
+2. `calendar_read` → today's events (read-only). "No events." = a clear day; a
+   "not configured/failed" message → say the calendar is unavailable in one line.
+   Never invent events.
+3. `linear_personal` → Taylor's life-tasks (the Personal project, grouped by
+   state). This is the backbone of the briefing; lead with what's due/overdue and
+   time-sensitive.
+4. Optional: `vault_read` a note or two for context on a specific task. Do NOT
+   mine the `02 - Todos` lists — life-tasks live in Linear now.
 
 ## Compose
 
-Write a short, bolded-where-it-counts briefing with these sections:
+Write a short, scannable personal briefing:
 
-- **Top priority** — the single most valuable thing to do today, and why.
-- **Schedule** — today's timed events from `calendar_read`, earliest first (e.g. "17:45 Power Yoga"). Note all-day items briefly. Use this to shape the day's plan around fixed commitments. Omit the section only if the day is genuinely clear.
-- **Today's focus** — up to 3 concrete things (bullets, each ~1 line), fitted around the schedule.
-- **In flight** — the **In Progress** issues from `linear_board`, each by ID + title (this is rarely empty — check `linear_board` output before writing "none").
-- **On deck** — the top 2–3 **Backlog** issues from `linear_board` (by ID + title), plus the most relevant active vault todos.
-- **Watch-outs** — anything time-sensitive, blocked, or at risk.
-- **One thing to learn** — a brief, genuinely useful pointer tied to today's work (skip if nothing fits; don't pad).
-- **Feedback** — ask ONE specific question that would make tomorrow's briefing better (e.g. "Was 'On deck' useful, or noise?"). Invite Taylor to reply in chat or jot a note.
+- **Top priority** — the single most valuable life-task today (due/time-sensitive first), and why.
+- **Schedule** — today's timed events from `calendar_read`, earliest first (e.g. "17:45 Power Yoga"); note all-day items briefly. Shape the day around these fixed commitments. Omit only if the day is genuinely clear.
+- **Today's focus** — up to 3 concrete life-tasks, fitted around the schedule.
+- **On deck** — a few notable upcoming life-tasks from `linear_personal` (by title; IDs optional).
+- **Watch-outs** — anything time-sensitive, overdue, blocked, or waiting-for (a due date approaching, a "waiting-for" item to chase).
+- **One thing to learn** — a brief, genuinely useful pointer tied to Taylor's actual work/interests (skip if nothing fits — don't pad).
+- **Feedback** — one specific question that would make tomorrow's briefing better.
 
-Calendar is wired (`calendar_read`); email is not (deprioritized) — if email would be relevant, say so in one line. Never fabricate events or messages.
+Calendar is wired (`calendar_read`); email is not (deprioritized). Dev work is tracked separately — don't fold PA-dev issues into this personal briefing. Never fabricate events or tasks.
 
 ## Save and deliver
 
