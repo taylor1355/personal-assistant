@@ -33,7 +33,7 @@ The daily/weekly/capture loop + the substrate they share. This is the anti-rot o
 - **PA-102** — memory / situational-awareness substrate + completion detection *(foundation — stops stale items, enables continuity)*
 - **PA-100** — calibrated nudge engine *(persistent follow-up)*
 - **PA-101** — low-friction daily capture *(evening prompt → journal; feeds the review)*
-- **PA-96** — daily briefing v2: personal-first, synthesized, capacity-aware *(needs PA-30, PA-102)*
+- **PA-96** — daily briefing v2: personal-first, synthesized, capacity-aware *(needs PA-30, PA-102; consumes PA-99's weekly focus when available, with a fallback)*
 - **PA-99** — weekly review system *(anti-rot keystone; needs PA-100 + PA-101; outputs the weekly focus PA-96 consumes)*
 
 ### Phase 2 — Frictionless intake at scale
