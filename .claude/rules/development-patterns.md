@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 # In a function:
 logger.info("classified %d items", len(items))
-logger.warning("inbox file missing — no work")
+logger.warning("skipped processing — inbox file missing")
 logger.error("linear_create failed for %r: %s", item.summary, exc)
 ```
 
