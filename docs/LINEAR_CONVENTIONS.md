@@ -121,14 +121,15 @@ Any "must not change X" guardrails.
 
 ## Lifecycle ownership
 
-Lifted from npc-simulation `/work` skill. The agent owns issue status for issues it's actively working on:
+Issues move `Todo → In Progress → Done` through three mechanisms, so the user rarely
+touches status by hand. Full setup and verification: [DEV_WORKFLOW.md](DEV_WORKFLOW.md).
 
-- **Pickup**: agent moves issue from `Todo → In Progress` when it begins. Auto-applied (logged as proposal).
-- **Done**: agent moves `In Progress → Done` when the proposal that closes the issue is applied (or when the dev-PR merges, for v2). Auto-applied.
-- **Stale revert**: a daily scheduled trigger checks for `In Progress` issues with no Linear activity in the configured window (default 7 days). The agent reverts to `Todo` and adds a comment noting the reason. Auto-applied.
-- **Manual user changes** override the agent. If the user transitions an issue, the agent doesn't fight it.
+- **Pickup** (`Todo → In Progress`): the `/work` orchestrator runs `tools/linear pickup <id>` on dispatch. Independently, the Linear↔GitHub integration moves an issue to In Progress when a branch or PR first references its id (`feature/PA-N-slug`, or `Fixes PA-N` in the PR body).
+- **Done** (`In Progress → Done`): the Linear↔GitHub integration moves the issue to Done when its PR merges — driven by `Fixes PA-N` in the PR body (the `/pr` skill adds it). This fires whether or not a `/work` session is running, so hand-merged PRs still close their issue. Non-dev issues closed by a proposal move to Done when the applier applies the closing proposal.
+- **Stale revert** (`In Progress → Todo`): a daily job reverts `In Progress` issues with no open PR/branch and no activity in the configured window (default 7 days), leaving a comment. *(Ships in PA-106 PR 1b.)*
+- **Manual user changes** override the automation. If the user transitions an issue, nothing fights it.
 
-The user should rarely need to touch issue status manually for agent-owned work. Strategic decisions (priority, labels, project assignment) remain user-gated through the `pm_agent`.
+Strategic decisions (priority, labels, project assignment) stay user-gated.
 
 ## Triage workflow
 
