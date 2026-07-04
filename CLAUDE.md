@@ -47,9 +47,9 @@ docs/                   ARCHITECTURE, PROPOSAL_FORMAT, BUDGET, LINEAR_CONVENTION
                         VAULT_ORGANIZATION, DEVOPS
 .claude/
   rules/                project-specific principles (architecture, dev-patterns, testing)
-  skills/               dev-time workflows (audit, pr, subagent-scaffold, trigger-wire)
+  skills/               dev-time workflows (work, audit, pr, subagent-scaffold, trigger-wire)
   agents/               utility agents (code-quality, doc-alignment, expert-debugger,
-                        pattern-auditor)
+                        pattern-auditor, thread-dev, product-manager)
 ```
 
 ## Architectural Principles (full text in [.claude/rules/architecture.md](.claude/rules/architecture.md))
@@ -97,12 +97,13 @@ Full guidelines: [.claude/rules/development-patterns.md](.claude/rules/developme
 
 | Skill | Purpose |
 |---|---|
+| `/work [issue ids]` | Development orchestrator: dispatches issues to worktree thread agents in parallel, owns delivery (PRs) + the Linear lifecycle. See [docs/DEV_WORKFLOW.md](docs/DEV_WORKFLOW.md) |
 | `/audit [path]` | Adversarial review: bugs, gaps, stale docs, missing tests |
 | `/pr [pr-number]` | PR pipeline: lint → test → docs → commit → create PR |
 | `/subagent-scaffold` | Generate a new subagent file with consistent shape |
 | `/trigger-wire` | Wire a new wake trigger end-to-end (source + handler + config + tests) |
 
-Utility agents (used by skills): `code-quality`, `doc-alignment`, `expert-debugger`, `pattern-auditor`.
+Utility agents (used by skills): `code-quality`, `doc-alignment`, `expert-debugger`, `pattern-auditor`. `/work` dispatches `thread-dev` (worktree edit-and-verify worker) and `product-manager` (Linear survey).
 
 Runtime capabilities of the assistant itself (not skills) live in `agent/` and `docs/PROPOSAL_FORMAT.md`.
 
