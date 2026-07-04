@@ -39,3 +39,6 @@ node_modules/
 install-pyenv-win.ps1
 *.local.sh
 *.local.ps1
+
+# /work skill session ephemera (Plan-agent output, saved per-issue)
+docs/plans/
