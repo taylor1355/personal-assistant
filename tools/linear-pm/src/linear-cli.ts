@@ -833,11 +833,17 @@ async function staleRevert(args: string[]) {
   const reverted: string[] = [];
   const skipped: string[] = [];
 
-  for (const issue of issues.nodes) {
-    const updatedMs = new Date(issue.updatedAt).getTime();
-    if (updatedMs >= cutoffMs) continue; // recent activity — not stale
+  // Filter to stale issues first, then fetch their attachments in parallel —
+  // avoids an N+1 of sequential attachment queries when several are stale.
+  const staleIssues = issues.nodes.filter(
+    (issue) => new Date(issue.updatedAt).getTime() < cutoffMs
+  );
+  const withAttachments = await Promise.all(
+    staleIssues.map(async (issue) => ({ issue, attachments: await issue.attachments() }))
+  );
 
-    const attachments = await issue.attachments();
+  for (const { issue, attachments } of withAttachments) {
+    const updatedMs = new Date(issue.updatedAt).getTime();
     const hasPr = attachments.nodes.some(
       (att: any) =>
         typeof att.url === "string" && /github\.com\/[^/]+\/[^/]+\/pull\/\d+/.test(att.url)
