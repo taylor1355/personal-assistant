@@ -124,8 +124,8 @@ Any "must not change X" guardrails.
 Issues move `Todo → In Progress → Done` through three mechanisms, so the user rarely
 touches status by hand. Full setup and verification: [DEV_WORKFLOW.md](DEV_WORKFLOW.md).
 
-- **Pickup** (`Todo → In Progress`): the `/work` orchestrator runs `tools/linear pickup <id>` on dispatch. Independently, the Linear↔GitHub integration moves an issue to In Progress when a branch or PR first references its id (`feature/PA-N-slug`, or `Fixes PA-N` in the PR body).
-- **Done** (`In Progress → Done`): the Linear↔GitHub integration moves the issue to Done when its PR merges — driven by `Fixes PA-N` in the PR body (the `/pr` skill adds it). This fires whether or not a `/work` session is running, so hand-merged PRs still close their issue. Non-dev issues closed by a proposal move to Done when the applier applies the closing proposal.
+- **Pickup** (`Todo → In Progress`): the `/work` orchestrator runs `tools/linear pickup <id>` on dispatch. Independently, the Linear↔GitHub integration moves an issue to In Progress when a branch or PR first references its id (`feature/PA-<id>-slug`, or `Fixes PA-<id>` in the PR body).
+- **Done** (`In Progress → Done`): the Linear↔GitHub integration moves the issue to Done when its PR merges — driven by `Fixes PA-<id>` in the PR body (the `/pr` skill adds it). This fires whether or not a `/work` session is running, so hand-merged PRs still close their issue. Non-dev issues closed by a proposal move to Done when the applier applies the closing proposal.
 - **Stale revert** (`In Progress → Todo`): a daily job reverts `In Progress` issues with no open PR/branch and no activity in the configured window (default 7 days), leaving a comment. *(Ships in PA-106 PR 1b.)*
 - **Manual user changes** override the automation. If the user transitions an issue, nothing fights it.
 

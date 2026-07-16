@@ -158,8 +158,8 @@ Present the verification checklist to the user and **wait for their feedback**. 
    ```
    Types: `feat`, `fix`, `refactor`, `docs`, `chore`, `test`, `perf`. Create focused commits: separate bug fixes from refactoring from docs.
 
-2. **Push and create PR**. Derive the issue id `PA-N` from the branch name
-   (`<type>/PA-<id>-<slug>`) and put `Fixes PA-N` in the body — this is what drives
+2. **Push and create PR**. Derive the issue id `PA-<id>` from the branch name
+   (`<type>/PA-<id>-<slug>`) and put `Fixes PA-<id>` in the body — this is what drives
    the Linear lifecycle (In Progress on PR open → Done on merge) through the
    Linear↔GitHub integration. See [docs/DEV_WORKFLOW.md](../../../docs/DEV_WORKFLOW.md).
    If the branch has no `PA-<id>`, omit the line.
@@ -169,7 +169,7 @@ Present the verification checklist to the user and **wait for their feedback**. 
    ## Summary
    <change report from Phase 5>
 
-   Fixes PA-N
+   Fixes PA-<id>
 
    ## Test plan
    <verification checklist from Phase 6 with checked/unchecked status>

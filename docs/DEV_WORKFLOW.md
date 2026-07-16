@@ -11,7 +11,7 @@ status accurate so you rarely touch it by hand:
 | Transition | Driver | When |
 |---|---|---|
 | `Todo → In Progress` | `/work` orchestrator (`tools/linear pickup`) **and** the Linear↔GitHub integration | On dispatch, or when a branch/PR first references the issue |
-| `In Progress → Done` | Linear↔GitHub integration | When the issue's PR merges (`Fixes PA-N` in the PR body) |
+| `In Progress → Done` | Linear↔GitHub integration | When the issue's PR merges (`Fixes PA-<id>` in the PR body) |
 | `In Progress → Todo` | Daily stale-revert job | Issue idle beyond the window (default 7 days) with no open PR/branch |
 
 The done-on-merge path runs through Linear's GitHub integration, **not** a `/work`
@@ -36,26 +36,26 @@ Manual overrides always win: if you move an issue yourself, nothing fights you.
    - **PR merged →** move the linked issue to **Done**.
    Exact wording varies by Linear version; the mapping you want is
    "PR opened → In Progress" and "PR merged → Done".
-3. Confirm the **Personal Assistant (PA)** team is selected so `PA-N` ids resolve.
+3. Confirm the **Personal Assistant (PA)** team is selected so `PA-<id>` ids resolve.
 
 ### Verify it works
 
-1. Branch off main for any small throwaway issue: `feature/PA-NN-verify-linear`.
-2. Open a PR whose body contains `Fixes PA-NN`. → the issue flips to **In Progress**
+1. Branch off main for any small throwaway issue: `feature/PA-<id>-verify-linear`.
+2. Open a PR whose body contains `Fixes PA-<id>`. → the issue flips to **In Progress**
    and shows the linked PR.
 3. Merge (or close) the PR. → the issue flips to **Done**.
 
 If a transition doesn't fire, re-check step 2's automation mapping and that the PR
-body actually contains `Fixes PA-NN` (or the branch name contains `PA-NN`).
+body actually contains `Fixes PA-<id>` (or the branch name contains `PA-<id>`).
 
 ## Using it day to day
 
 - **Branch naming**: `<type>/PA-<id>-<slug>`, e.g. `feature/PA-100-nudge-engine`.
   The `PA-<id>` in the branch is enough for Linear to link the PR.
-- **PR body**: include `Fixes PA-N` — the `/pr` skill adds this automatically.
+- **PR body**: include `Fixes PA-<id>` — the `/pr` skill adds this automatically.
   `Fixes` / `Closes` / `Resolves` all trigger done-on-merge; `Ref` / `Part of`
   link without closing.
-- **Several issues in one PR**: add one `Fixes PA-N` line per issue.
+- **Several issues in one PR**: add one `Fixes PA-<id>` line per issue.
 - **Parallel work**: the `/work` skill dispatches issues into isolated worktrees and
   owns pickup + delivery. See [.claude/skills/work/SKILL.md](../.claude/skills/work/SKILL.md).
 

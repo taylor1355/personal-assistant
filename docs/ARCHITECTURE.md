@@ -207,7 +207,7 @@ This naturally implements the auto-approve-mechanical / gate-strategic split: ta
 
 ### Issue ownership lifecycle
 
-The lifecycle (`Todo → In Progress → Done`, plus stale-revert) is implemented by the `/work` orchestrator together with Linear's GitHub integration. `/work` runs `tools/linear pickup` on dispatch; the Linear↔GitHub integration moves an issue to In Progress when a branch/PR references it and to Done when that PR merges (via `Fixes PA-N` in the PR body), so hand-merged PRs close their issue too. Stale `In Progress` issues (no open PR, no movement in N days) auto-revert to `Todo` via a daily job. Non-dev issues closed by a proposal move to Done when the applier applies the closing proposal. Setup: [DEV_WORKFLOW.md](DEV_WORKFLOW.md).
+The lifecycle (`Todo → In Progress → Done`, plus stale-revert) is implemented by the `/work` orchestrator together with Linear's GitHub integration. `/work` runs `tools/linear pickup` on dispatch; the Linear↔GitHub integration moves an issue to In Progress when a branch/PR references it and to Done when that PR merges (via `Fixes PA-<id>` in the PR body), so hand-merged PRs close their issue too. Stale `In Progress` issues (no open PR, no movement in N days) auto-revert to `Todo` via a daily job. Non-dev issues closed by a proposal move to Done when the applier applies the closing proposal. Setup: [DEV_WORKFLOW.md](DEV_WORKFLOW.md).
 
 ### No mirror in vault
 
