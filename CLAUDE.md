@@ -113,7 +113,7 @@ Runtime capabilities of the assistant itself (not skills) live in `agent/` and `
 - **Run tests before proposing commits.** Full suite must pass; flaky tests get fixed or filed as Linear issues, not skipped.
 - **Focused commits** — separate fixes, refactors, docs. Reference Linear issues in commit subjects when working from one (`feat(agent): debounced inbox dispatcher (PA-12)`).
 - **Pre-existing failures**: don't paper over. File a Linear issue with the `bug` label and proceed; don't let it block unrelated work.
-- **Linear lifecycle** — issues auto-transition `Todo → In Progress → Done` via the `/work` orchestrator + Linear's GitHub integration (`Fixes PA-N` in the PR body drives done-on-merge); a daily job reverts stale `In Progress`. Don't hand-transition issues you're working on. Setup: [docs/DEV_WORKFLOW.md](docs/DEV_WORKFLOW.md).
+- **Linear lifecycle** — issues auto-transition `Todo → In Progress → Done` via the `/work` orchestrator + Linear's GitHub integration (`Fixes PA-<id>` in the PR body drives done-on-merge); a daily job reverts stale `In Progress`. Don't hand-transition issues you're working on. Setup: [docs/DEV_WORKFLOW.md](docs/DEV_WORKFLOW.md).
 - **Branch naming**: `<type>/PA-<id>-<slug>` where type ∈ {feature, fix, refactor, docs, chore}.
 
 ## Commit Messages
