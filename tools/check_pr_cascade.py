@@ -157,7 +157,7 @@ def get_open_prs(repo: str) -> list[int]:
             "100",
         ]
     )
-    return [int(line) for line in out.splitlines() if line.strip()]
+    return [int(line) for line in out.splitlines() if line.strip().isdigit()]
 
 
 def get_merged_pr_files(repo: str, pr: int, timeout: float) -> set[str]:

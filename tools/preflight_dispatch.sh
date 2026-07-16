@@ -48,11 +48,13 @@ echo "=== preflight: unit suite runs (fast; the <5s gate) ==="
 # Catches broken deps / import errors / pytest-config regressions that would
 # make every agent's test run fail with opaque errors. Uses the real suite,
 # which the testing rules require to finish in <5s.
-if uv run --project agent pytest agent/tests -q >/tmp/preflight_pytest.txt 2>&1; then
-    _ok "pytest agent/tests ($(grep -oE '[0-9]+ passed' /tmp/preflight_pytest.txt | head -1))"
+PREFLIGHT_TMP=$(mktemp)
+trap 'rm -f "$PREFLIGHT_TMP"' EXIT
+if uv run --project agent pytest agent/tests -q >"$PREFLIGHT_TMP" 2>&1; then
+    _ok "pytest agent/tests ($(grep -oE '[0-9]+ passed' "$PREFLIGHT_TMP" | head -1))"
 else
-    _bad "pytest agent/tests failed — see /tmp/preflight_pytest.txt (tail below)"
-    tail -15 /tmp/preflight_pytest.txt >&2
+    _bad "pytest agent/tests failed — see $PREFLIGHT_TMP (tail below)"
+    tail -15 "$PREFLIGHT_TMP" >&2
 fi
 
 echo ""

@@ -158,31 +158,31 @@ for PR in "$@"; do
             | select((.user.login != \"$AUTHOR\") or ((.body | test(\"$DISPOSITION_PATTERN\")) | not))
             | (if (.id as \$id | \$dispositioned_ids | index(\$id)) then \"[DISPOSITIONED]\" else \"[OPEN]    \" end) as \$status
             | \"\(\$status) \(.user.login) \(.path // \"?\"):\(.line // .original_line // 0)\\n  \(.body | gsub(\"\\r?\\n\"; \"\\n  \"))\\n---\"
-        " 2>/dev/null
+        " 2>/dev/null || echo "  !! failed to fetch inline comments"
 
     # --- Top-level review comments ---
     echo "--- Top-level comments (full history) ---"
     gh pr view "$PR" --repo "$REPO" --comments --json comments \
         --jq "
-            ([.comments[]
+            ([.comments?[]
               | select(.author.login == \"$AUTHOR\" and (.body | test(\"$DISPOSITION_PATTERN\")))
               | .createdAt
              ] | max) as \$latest_author_dispo
             |
-            .comments[]
+            .comments?[]
             | select(.author.login != \"linear\")
             | select((.author.login != \"$AUTHOR\") or ((.body | test(\"$DISPOSITION_PATTERN\")) | not))
             | (if (\$latest_author_dispo != null and .createdAt < \$latest_author_dispo)
                   then \"[DISPOSITIONED-by-later-author-reply]\"
                   else \"[OPEN]                                 \" end) as \$status
             | \"\(\$status) \(.author.login) (\(.createdAt[:16]))\\n  \(.body | gsub(\"\\r?\\n\"; \"\\n  \"))\\n---\"
-        " 2>/dev/null
+        " 2>/dev/null || echo "  !! failed to fetch top-level comments"
 
     # --- Formal review submissions ---
     echo "--- Review submissions ---"
     gh pr view "$PR" --repo "$REPO" --json reviews \
-        --jq '.reviews[] | select(.body != "") | .author.login + " (\(.state), \(.submittedAt[:16])):\n  " + (.body | gsub("\r?\n"; "\n  ")) + "\n---"' \
-        2>/dev/null
+        --jq '.reviews?[] | select(.body != "") | .author.login + " (\(.state), \(.submittedAt[:16])):\n  " + (.body | gsub("\r?\n"; "\n  ")) + "\n---"' \
+        2>/dev/null || echo "  !! failed to fetch reviews"
 
     echo ""
 done
