@@ -787,6 +787,91 @@ async function setupLabels() {
   );
 }
 
+// Revert stale In Progress issues back to Todo so the board reflects what's
+// actually moving. An issue qualifies when it has been In Progress with no
+// activity for longer than the threshold AND has no linked GitHub PR (an
+// In Progress issue with a PR is active dev work — merged PRs are already moved
+// to Done by the integration, so a PR attachment here means it's open/unmerged).
+async function staleRevert(args: string[]) {
+  let days = 7;
+  let dryRun = false;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]!;
+    if (a === "--days") {
+      const v = args[++i];
+      days = Number(v);
+      if (!Number.isInteger(days) || days < 1) {
+        console.error(`--days expects a positive integer (got "${v}")`);
+        process.exit(1);
+      }
+    } else if (a === "--dry-run") {
+      dryRun = true;
+    } else {
+      console.error(`Unknown argument "${a}". Usage: stale-revert [--days N] [--dry-run]`);
+      process.exit(1);
+    }
+  }
+
+  const team = await getTeam();
+  const stateMap = await getStates(team.id);
+  const inProgressId = stateMap["In Progress"];
+  const todoId = stateMap["Todo"];
+  if (!inProgressId || !todoId) {
+    console.error(
+      `Team ${team.key} is missing an "In Progress" or "Todo" state. ` +
+        `Available: ${Object.keys(stateMap).join(", ")}`
+    );
+    process.exit(1);
+  }
+
+  const cutoffMs = Date.now() - days * 24 * 60 * 60 * 1000;
+  const issues = await client.issues({
+    first: 250,
+    filter: { team: { id: { eq: team.id } }, state: { id: { eq: inProgressId } } },
+  });
+
+  const reverted: string[] = [];
+  const skipped: string[] = [];
+
+  for (const issue of issues.nodes) {
+    const updatedMs = new Date(issue.updatedAt).getTime();
+    if (updatedMs >= cutoffMs) continue; // recent activity — not stale
+
+    const attachments = await issue.attachments();
+    const hasPr = attachments.nodes.some(
+      (att: any) =>
+        typeof att.url === "string" && /github\.com\/[^/]+\/[^/]+\/pull\/\d+/.test(att.url)
+    );
+    const ageDays = Math.floor((Date.now() - updatedMs) / 86_400_000);
+    if (hasPr) {
+      skipped.push(`${issue.identifier} (idle ${ageDays}d, has linked PR)`);
+      continue;
+    }
+    if (dryRun) {
+      reverted.push(`${issue.identifier} (idle ${ageDays}d) [dry-run]`);
+      continue;
+    }
+
+    await client.updateIssue(issue.id, { stateId: todoId });
+    await client.createComment({
+      issueId: issue.id,
+      body:
+        `Auto-reverted **In Progress → Todo** after ${ageDays} days idle ` +
+        `(no activity and no linked PR within the ${days}-day window). ` +
+        `Pick it back up when you resume — this keeps the board honest about what's actually moving.`,
+    });
+    reverted.push(`${issue.identifier} (idle ${ageDays}d)`);
+  }
+
+  console.log(
+    `Stale-revert (In Progress → Todo, threshold ${days}d)` +
+      `${dryRun ? " [DRY RUN — no changes made]" : ""}: ` +
+      `${reverted.length} reverted, ${skipped.length} skipped.`
+  );
+  for (const r of reverted) console.log(`  reverted: ${r}`);
+  for (const s of skipped) console.log(`  skipped:  ${s}`);
+}
+
 // --- Main ---
 
 const [, , command, ...args] = process.argv;
@@ -835,6 +920,9 @@ async function main() {
     case "set-priority":
       await setPriority(args);
       break;
+    case "stale-revert":
+      await staleRevert(args);
+      break;
     case "comment":
       await comment(args);
       break;
@@ -859,7 +947,8 @@ async function main() {
           `         create "Title" [--priority P] [--label L ...] [--description D] [--state S] |\n` +
           `         update  (json on stdin: {identifier, title?, description?, priority?, state?, labels?}) |\n` +
           `         comment <id> <body|->  (- reads from stdin) |\n` +
-          `         link <blocker> <blocked> | unlink <blocker> <blocked>\n` +
+          `         link <blocker> <blocked> | unlink <blocker> <blocked> |\n` +
+          `         stale-revert [--days N] [--dry-run]  (In Progress -> Todo for idle issues)\n` +
           `Setup:   setup-labels  (idempotent: creates personal-assistant taxonomy)`
       );
   }

@@ -1,0 +1,51 @@
+name: Linear stale-revert
+
+# Reverts stale "In Progress" Linear issues back to "Todo" so the board reflects
+# what's actually moving (the third piece of the PA-106 lifecycle; pickup +
+# done-on-merge are handled by the Linear<->GitHub integration). Runs on GitHub's
+# infra rather than the local gateway, so it fires even when the dev machine is off.
+#
+# Requires repo secret LINEAR_API_KEY (Settings -> Secrets and variables -> Actions).
+
+on:
+  schedule:
+    - cron: "0 12 * * *" # daily ~08:00 ET
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Idle-days threshold before reverting"
+        required: false
+        default: "7"
+      dry_run:
+        description: "Report only, make no changes"
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  stale-revert:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Linear CLI deps
+        working-directory: tools/linear-pm
+        run: npm ci
+
+      - name: Run stale-revert
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          LINEAR_TEAM_KEY: PA
+        run: |
+          if [ -z "$LINEAR_API_KEY" ]; then
+            echo "::error::LINEAR_API_KEY secret is not set — add it under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          DAYS="${{ github.event.inputs.days || '7' }}"
+          DRY=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then DRY="--dry-run"; fi
+          bash tools/linear stale-revert --days "$DAYS" $DRY

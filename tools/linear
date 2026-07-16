@@ -4,7 +4,8 @@
 # Commands: status | todo | project <name> | issue <id> | pickup <id> [id...] |
 #           done <id> [id...] | set-state <State> <id> [id...] | set-priority <p> <id> [id...] |
 #           search <query> | blocked | next | create | update | comment <id> <body> |
-#           link <blocker-id> <blocked-id> | unlink <blocker-id> <blocked-id> | whoami
+#           link <blocker-id> <blocked-id> | unlink <blocker-id> <blocked-id> |
+#           stale-revert [--days N] [--dry-run] | whoami
 
 set -euo pipefail
 
