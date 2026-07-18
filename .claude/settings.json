@@ -75,7 +75,21 @@
       "Bash(mkdir /tmp/*)",
       "Bash(command -v *)",
       "Bash(* --help)",
-      "Bash(* -h)"
+      "Bash(* -h)",
+      "Bash(bash tools/setup_worktree.sh*)",
+      "Bash(./tools/setup_worktree.sh*)",
+      "Bash(bash tools/preflight_dispatch.sh*)",
+      "Bash(./tools/preflight_dispatch.sh*)",
+      "Bash(bash tools/check_prs.sh*)",
+      "Bash(./tools/check_prs.sh*)",
+      "Bash(bash tools/watch_pr_merges.sh*)",
+      "Bash(bash tools/check_pr_cascade.sh*)",
+      "Bash(./tools/check_pr_cascade.sh*)",
+      "Bash(npm install*)",
+      "Bash(go vet*)",
+      "Bash(go test*)",
+      "Bash(go build*)",
+      "Bash(uv run --project agent python *)"
     ],
     "deny": [
       "Edit(.env*)",
