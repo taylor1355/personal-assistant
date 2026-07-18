@@ -261,8 +261,8 @@ Check `git status` in the main worktree, categorize the changes, present them to
 **You own issue status; the user shouldn't have to touch Linear.** Full mechanism: [docs/DEV_WORKFLOW.md](../../../docs/DEV_WORKFLOW.md).
 
 - **On dispatch (Phase 4)**: `bash tools/linear pickup PA-XX` for each dispatched issue. (The Linear↔GitHub integration also moves it to In Progress when the branch/PR appears; the explicit pickup covers the window before the PR exists.)
-- **On merge**: **Done is owned by the Linear↔GitHub integration** (the `Fixes PA-N` in the PR body). Do **not** routinely also run `tools/linear done` — let one mechanism own it. *Fallback:* if the integration isn't connected yet (early state) or hasn't fired, the merge watcher runs `tools/linear done PA-XX` (Phase 6b). Verify the issue actually reached Done before considering the thread closed.
-- **On session start (Phase 1 / Status)**: flag `In Progress` issues with no active worktree/agent/open-PR as stale; the daily stale-revert job reverts them, or do it manually (`bash tools/linear set-state Todo PA-XX`) with a comment.
+- **On merge**: **Done is owned by the Linear↔GitHub integration** (the `Fixes PA-<id>` in the PR body). Do **not** routinely also run `tools/linear done` — let one mechanism own it. *Fallback:* if the integration isn't connected yet (early state) or hasn't fired, the merge watcher runs `tools/linear done PA-XX` (Phase 6b). Verify the issue actually reached Done before considering the thread closed.
+- **On session start (Phase 1 / Status)**: flag `In Progress` issues with no active worktree/agent/open-PR and surface them to the user — they may be stale from an abandoned session. Don't auto-move them to Todo; let the user decide.
 - **Blocking**: before dispatching, skip issues Linear marks blocked (`tools/linear blocked`); when an agent reports a dependency, note it on the blocked issue.
 
 ## Status Check

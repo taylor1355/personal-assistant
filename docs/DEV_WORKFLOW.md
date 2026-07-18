@@ -5,14 +5,13 @@ current without manual bookkeeping.
 
 ## The lifecycle
 
-Every dev issue moves `Todo → In Progress → Done`. Three mechanisms keep that
+Every dev issue moves `Todo → In Progress → Done`. Two mechanisms keep that
 status accurate so you rarely touch it by hand:
 
 | Transition | Driver | When |
 |---|---|---|
 | `Todo → In Progress` | `/work` orchestrator (`tools/linear pickup`) **and** the Linear↔GitHub integration | On dispatch, or when a branch/PR first references the issue |
 | `In Progress → Done` | Linear↔GitHub integration | When the issue's PR merges (`Fixes PA-<id>` in the PR body) |
-| `In Progress → Todo` | Daily stale-revert job | Issue idle beyond the window (default 7 days) with no open PR/branch |
 
 The done-on-merge path runs through Linear's GitHub integration, **not** a `/work`
 session — so a PR you merge by hand still closes its issue.
@@ -20,8 +19,7 @@ session — so a PR you merge by hand still closes its issue.
 Manual overrides always win: if you move an issue yourself, nothing fights you.
 
 > The `Todo → In Progress` and `In Progress → Done` transitions are live once the
-> integration below is connected. The stale-revert job (`tools/linear stale-revert`)
-> ships in a follow-up (PA-106, PR 1b).
+> integration below is connected.
 
 ## One-time setup: connect Linear ↔ GitHub
 
