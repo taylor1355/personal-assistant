@@ -131,10 +131,18 @@ class SupervisorState:
     tripped_until: datetime | None = None
 
     def reset_failures(self) -> SupervisorState:
+        # A gateway that has stayed alive past STABILIZE_SECONDS is genuinely
+        # recovered, so fully re-arm the breaker: clear the restart history and
+        # any open trip, not just the failure count. Leaving tripped_until set
+        # would keep a recovered-then-recrashed gateway in TRIPPED_WAIT for the
+        # rest of the old cooldown, reintroducing the downtime this tool kills.
+        # Clearing restart_times also bounds the tuple that restarts_within scans.
         return replace(
             self,
             consecutive_failures=0,
             last_restart_at=None,
+            restart_times=(),
+            tripped_until=None,
         )
 
     def record_restart(self, now: datetime) -> SupervisorState:

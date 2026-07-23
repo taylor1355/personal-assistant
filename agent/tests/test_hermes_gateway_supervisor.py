@@ -269,6 +269,31 @@ def test_decide_window_slides_old_restarts_out():
     assert action.kind is s.ActionKind.RESTART
 
 
+def test_decide_recovered_then_recrashed_within_cooldown_restarts():
+    # Regression: a tripped breaker must re-arm when the gateway recovers on its
+    # own and stays healthy past STABILIZE_SECONDS. Otherwise a genuine new crash
+    # within the original cooldown stays in TRIPPED_WAIT for the rest of the
+    # window — reintroducing the downtime this tool exists to eliminate.
+    tripped_until = T0 + timedelta(seconds=s.CB_COOLDOWN_SECONDS)
+    tripped = s.SupervisorState(
+        consecutive_failures=s.CB_MAX,
+        restart_times=tuple(T0 - timedelta(seconds=i) for i in range(s.CB_MAX)),
+        last_restart_at=T0,
+        tripped_until=tripped_until,
+    )
+    # Gateway comes back and stays alive past the stabilize window -> breaker re-arms.
+    stabilized_at = T0 + timedelta(seconds=s.STABILIZE_SECONDS + 1)
+    action, recovered = s.decide_next_action(tripped, s.Liveness.ALIVE, stabilized_at)
+    assert action.kind is s.ActionKind.SLEEP
+    assert recovered.tripped_until is None
+    # It crashes again while the ORIGINAL cooldown would still be open.
+    assert stabilized_at < tripped_until
+    action, _ = s.decide_next_action(
+        recovered, s.Liveness.DEAD, stabilized_at + timedelta(seconds=1)
+    )
+    assert action.kind is s.ActionKind.RESTART
+
+
 # --------------------------------------------------------------------------
 # SupervisorState helpers
 # --------------------------------------------------------------------------
@@ -282,9 +307,17 @@ def test_state_record_restart_appends_and_increments():
 
 
 def test_state_reset_failures_clears_counters():
-    state = s.SupervisorState(consecutive_failures=4, last_restart_at=T0).reset_failures()
+    state = s.SupervisorState(
+        consecutive_failures=4,
+        last_restart_at=T0,
+        restart_times=(T0,),
+        tripped_until=T0 + timedelta(seconds=s.CB_COOLDOWN_SECONDS),
+    ).reset_failures()
     assert state.consecutive_failures == 0
     assert state.last_restart_at is None
+    # A stabilized recovery fully re-arms the breaker.
+    assert state.restart_times == ()
+    assert state.tripped_until is None
 
 
 def test_state_restarts_within_counts_only_in_window():
