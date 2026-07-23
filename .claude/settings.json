@@ -83,6 +83,7 @@
       "Bash(bash tools/check_prs.sh*)",
       "Bash(./tools/check_prs.sh*)",
       "Bash(bash tools/watch_pr_merges.sh*)",
+      "Bash(./tools/watch_pr_merges.sh*)",
       "Bash(bash tools/check_pr_cascade.sh*)",
       "Bash(./tools/check_pr_cascade.sh*)",
       "Bash(npm install*)",
