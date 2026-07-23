@@ -8,7 +8,12 @@
  * Auth: LINEAR_API_KEY (required), LINEAR_TEAM_KEY (default "PA").
  */
 
-import { LinearClient } from "@linear/sdk";
+import {
+  IssueLabel,
+  IssueRelationType,
+  LinearClient,
+  WorkflowState,
+} from "@linear/sdk";
 
 const API_KEY = process.env.LINEAR_API_KEY;
 if (!API_KEY) {
@@ -114,7 +119,7 @@ async function whoami() {
   const labels = await client.issueLabels({ first: 200 });
   console.log(`User:   ${me.name} <${me.email}>`);
   console.log(`Team:   ${team.name} (${team.key})`);
-  console.log(`States: ${states.nodes.map((s) => s.name).join(", ")}`);
+  console.log(`States: ${states.nodes.map((s: WorkflowState) => s.name).join(", ")}`);
   const labelNames = labels.nodes.map((l) => l.name).sort();
   console.log(`Labels: ${labelNames.length > 0 ? labelNames.join(", ") : "(none yet)"}`);
 }
@@ -125,7 +130,7 @@ async function status() {
   const stateNames = ["In Progress", "Todo", "Blocked", "Backlog", "Triage"];
 
   for (const stateName of stateNames) {
-    const state = states.nodes.find((s) => s.name === stateName);
+    const state = states.nodes.find((s: WorkflowState) => s.name === stateName);
     if (!state) continue;
 
     const issues = await client.issues({
@@ -253,7 +258,7 @@ async function issueInfo(identifier: string) {
   console.log(`## ${issue.identifier}: ${issue.title}\n`);
   console.log(`**State**: ${state?.name || "?"}`);
   console.log(`**Priority**: ${PRIORITY_LABELS[issue.priority] ?? "?"}`);
-  console.log(`**Labels**: ${labels.nodes.map((l) => l.name).join(", ") || "(none)"}`);
+  console.log(`**Labels**: ${labels.nodes.map((l: IssueLabel) => l.name).join(", ") || "(none)"}`);
   if (project) console.log(`**Project**: ${project.name}`);
   console.log(`**URL**: ${issue.url}`);
 
@@ -485,12 +490,18 @@ async function createIssue(args: string[]) {
     }
 
     const priorityArg = (flags.priority || [])[0]?.toLowerCase();
+    const description = (flags.description || []).join(" ") || undefined;
+    const priority = priorityArg ? PRIORITY_NAMES[priorityArg] : undefined;
+    const labels = flags.label || undefined;
+    const state = (flags.state || [])[0] || undefined;
+    // Omit keys whose value is undefined rather than assigning `undefined`,
+    // so the object satisfies the exactOptionalPropertyTypes target type.
     data = {
       title,
-      description: (flags.description || []).join(" ") || undefined,
-      priority: priorityArg ? PRIORITY_NAMES[priorityArg] : undefined,
-      labels: flags.label || undefined,
-      state: (flags.state || [])[0] || undefined,
+      ...(description !== undefined ? { description } : {}),
+      ...(priority !== undefined ? { priority } : {}),
+      ...(labels !== undefined ? { labels } : {}),
+      ...(state !== undefined ? { state } : {}),
     };
   } else {
     let input = "";
@@ -515,13 +526,16 @@ async function createIssue(args: string[]) {
     .map((name: string) => labelMap[name.toLowerCase()])
     .filter(Boolean) as string[];
 
+  const stateId = stateMap[data.state || "Triage"] || stateMap["Backlog"];
   const result = await client.createIssue({
     teamId: team.id,
     title: data.title,
     description: data.description || "",
     priority: data.priority || 0,
     labelIds,
-    stateId: stateMap[data.state || "Triage"] || stateMap["Backlog"],
+    // Omit stateId when neither the requested state nor the Backlog fallback
+    // resolves, matching the prior behavior of passing `undefined`.
+    ...(stateId !== undefined ? { stateId } : {}),
   });
 
   const issue = await result.issue;
@@ -644,7 +658,7 @@ async function link(args: string[]) {
   const result = await client.createIssueRelation({
     issueId: blocker.id,
     relatedIssueId: blocked.id,
-    type: "blocks",
+    type: IssueRelationType.Blocks,
   });
   if (result.success) {
     console.log(`${blocker.identifier} now blocks ${blocked.identifier}`);
