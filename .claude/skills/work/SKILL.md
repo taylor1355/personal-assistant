@@ -50,7 +50,7 @@ If the user invoked `/work PA-100,PA-25` directly, skip the survey and go to Pha
 
 ## Phase 2: Issue Assignment
 
-For each selected issue, pull its full description (`bash tools/linear issue PA-NN`) and key it to the work by **subsystem label** (`agent`, `executor`, `sync`, `tools`, `docs`, `infra`). There is no fixed thread taxonomy — each issue is dispatched to a `thread-dev` worker parameterized by its issue + plan.
+For each selected issue, pull its full description (`bash tools/linear issue PA-XX`) and key it to the work by **subsystem label** (`agent`, `executor`, `sync`, `tools`, `docs`, `infra`). There is no fixed thread taxonomy — each issue is dispatched to a `thread-dev` worker parameterized by its issue + plan.
 
 ### Bundling scan (after picking primaries)
 
@@ -222,13 +222,13 @@ For each **Ship** thread, push and open the PR immediately — no local approval
 1. Navigate to the worktree.
 2. Commit if the agent left edits uncommitted (project commit style: one-line summary + rationale bullets; focused commits).
 3. `git push -u origin <branch-name>`.
-4. Create the PR with three body sections, and **`Fixes PA-N`** derived from the branch so the Linear↔GitHub integration moves the issue to Done on merge (see [docs/DEV_WORKFLOW.md](../../../docs/DEV_WORKFLOW.md)):
+4. Create the PR with three body sections, and **`Fixes PA-<id>`** derived from the branch so the Linear↔GitHub integration moves the issue to Done on merge (see [docs/DEV_WORKFLOW.md](../../../docs/DEV_WORKFLOW.md)):
    ```bash
    gh pr create --title "<short title>" --body-file - <<'EOF'
    ## Summary
    <from thread report>
 
-   Fixes PA-N
+   Fixes PA-<id>
 
    ## Risks and trade-offs
    <Phase 6 notes for this thread, verbatim>
