@@ -1,8 +1,7 @@
 ---
 name: work
-description: Development orchestrator — dispatches coding thread agents to work on Linear issues in parallel worktrees, then owns delivery (PRs) and the Linear lifecycle so you don't manage agents individually. Use to start a work session, assign issues, or review completed work.
+description: Development orchestrator — dispatches coding thread agents to work Linear issues in parallel worktrees, then owns delivery (PRs) and the Linear lifecycle so you don't manage agents individually. Invoke (yourself, or when the user asks) once dev work spans multiple issues or splits into independent threads that benefit from parallel orchestration; for a single small change, just make the edit directly. Also assigns issues and reviews completed work.
 argument-hint: "[issue ids, or empty for recommendations]"
-disable-model-invocation: true
 ---
 
 # Development Orchestrator
