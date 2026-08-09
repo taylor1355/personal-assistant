@@ -35,7 +35,7 @@ compose-up:
 
 test:
 	uv run --project agent pytest agent/tests
-	python -m unittest discover -s pa_mcp/tests
+	uv run --project agent python -m unittest discover -s pa_mcp/tests
 
 lint:
 	uv run --project agent ruff check agent
