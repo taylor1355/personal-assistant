@@ -188,7 +188,11 @@ def build_report(
         for pr in prs:
             total += 1
             buckets[classify(pr)].append(_format_pr(pr, repo, now))
-    lines: list[str] = [f"Open PRs across {len(repos)} repo(s): {total}"]
+    scanned = len(repos) - len(errors)
+    lines: list[str] = [
+        f"Open PRs across {scanned} of {len(repos)} repo(s): {total}" if errors
+        else f"Open PRs across {len(repos)} repo(s): {total}"
+    ]
     for bucket in BUCKET_ORDER:
         if not buckets[bucket]:
             continue
