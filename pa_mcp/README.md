@@ -39,6 +39,10 @@ Hermes launches the server over stdio. Required env (set in the Hermes config):
 - `GOOGLE_CALENDAR_TOKEN` — *(optional)* path to the read-only Calendar token
   from `scripts/google_oauth_setup.py`; without it `calendar_read` returns a
   "not configured" message. `GOOGLE_CALENDAR_ID` defaults to `primary`.
+- `PA_DEV_REPOS` — *(optional)* comma-separated `owner/repo` list scanned by
+  `dev_prs`; unset → the tool returns a "not configured" message. Requires `gh`
+  installed and authed on the host. Not the same key as `GITHUB_ALLOWED_REPOS`
+  (v2 PR-submission allowlist). See [docs/DEV_ATTENTION.md](../docs/DEV_ATTENTION.md).
 
 ### Calendar (read-only) setup
 

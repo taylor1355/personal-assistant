@@ -1,11 +1,12 @@
 # Convenience targets. Run `make help` to list.
 
-.PHONY: help agent-sync agent-wake executor sync compose-build compose-up lint fmt
+.PHONY: help agent-sync agent-wake executor sync compose-build compose-up lint fmt test
 
 help:
 	@echo "Targets:"
 	@echo "  agent-sync     uv sync the agent package"
 	@echo "  agent-wake     run the agent with --reason=manual-test"
+	@echo "  test           pytest on agent, unittest on pa_mcp"
 	@echo "  executor       run the executor service"
 	@echo "  sync           run the sync daemon (requires VAULT_PATH)"
 	@echo "  compose-build  build the agent image"
@@ -31,6 +32,10 @@ compose-build:
 
 compose-up:
 	docker compose up agent
+
+test:
+	uv run --project agent pytest agent/tests
+	python -m unittest discover -s pa_mcp/tests
 
 lint:
 	uv run --project agent ruff check agent
