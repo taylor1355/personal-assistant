@@ -145,6 +145,25 @@ class BuildReportTest(unittest.TestCase):
         report = dev_attention.build_report(["o/r"], runner=runner, now=NOW)
         self.assertIn("nothing waiting on you", report)
 
+    def test_unknown_mergeability_is_never_silent(self):
+        # GitHub computes mergeability lazily: a just-pushed PR reports UNKNOWN
+        # and could actually be conflicting. It must carry a caveat in its line,
+        # not sit under a bucket as if nothing were owed.
+        runner = fake_runner({"o/r": [pr(number=7, mergeable="UNKNOWN")]})
+        report = dev_attention.build_report(["o/r"], runner=runner, now=NOW)
+        self.assertIn("mergeability not yet computed", report)
+
+    def test_full_page_notes_possible_truncation(self):
+        page = [pr(number=n) for n in range(dev_attention._PR_LIMIT)]
+        report = dev_attention.build_report(
+            ["o/full", "o/small"],
+            runner=fake_runner({"o/full": page, "o/small": [pr(number=99)]}),
+            now=NOW,
+        )
+        self.assertIn("Incomplete scans", report)
+        self.assertIn("o/full", report)
+        self.assertNotIn("o/small: showing first", report)
+
 
 if __name__ == "__main__":
     unittest.main()
