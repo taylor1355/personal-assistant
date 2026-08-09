@@ -133,6 +133,8 @@ class BuildReportTest(unittest.TestCase):
         self.assertIn("#1", report)
         self.assertIn("could not be scanned", report)
         self.assertIn("o/bad", report)
+        # the header must not claim complete coverage when a repo failed
+        self.assertIn("across 1 of 2 repo(s)", report)
 
     def test_missing_gh_degrades_to_message(self):
         runner = fake_runner({"o/r": FileNotFoundError("gh")})
