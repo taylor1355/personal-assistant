@@ -11,15 +11,17 @@ invariant is enforced by **toolset lockdown** — the orchestrator is given only
 `mcp-pa-tools` (+ skills/memory), never Hermes' `terminal`/`file` toolsets, so
 it cannot mutate user state outside these typed tools.
 
-## Tools (16)
+## Tools (18)
 
 `vault_read`, `vault_list` · `linear_board`, `linear_todo`, `linear_next`,
-`linear_issue`, `linear_search` (reads) · `linear_create`, `linear_comment`,
-`linear_set_state`, `linear_set_priority`, `linear_link` (planning writes) ·
-`today`, `calendar_read` (read-only Google Calendar; degrades gracefully if
-unconfigured) · `assistant_write` (assistant-owned vault area, `00 - Assistant/`)
-· `propose` (queues a change to user state for approval — the only write path
-outside `00 - Assistant/`; writes a pending proposal, never applies it).
+`linear_issue`, `linear_search`, `linear_personal` (reads) · `linear_create`,
+`linear_comment`, `linear_set_state`, `linear_set_priority`, `linear_link`
+(planning writes) · `today`, `calendar_read` (read-only Google Calendar;
+degrades gracefully if unconfigured) · `dev_prs` (read-only GitHub PR attention
+scan across `PA_DEV_REPOS`; see [docs/DEV_ATTENTION.md](../docs/DEV_ATTENTION.md))
+· `assistant_write` (assistant-owned vault area, `00 - Assistant/`) · `propose`
+(queues a change to user state for approval — the only write path outside
+`00 - Assistant/`; writes a pending proposal, never applies it).
 
 ## Dev setup
 

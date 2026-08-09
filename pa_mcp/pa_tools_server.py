@@ -27,6 +27,8 @@ from types import ModuleType
 from mcp.server.fastmcp import FastMCP
 from pydantic import ValidationError
 
+import dev_attention  # sibling module (script dir is on sys.path when run by Hermes)
+
 REPO_ROOT = Path(os.environ.get("PA_REPO_ROOT", "")).expanduser()
 VAULT_ROOT = Path(os.environ.get("VAULT_ROOT", "")).expanduser()
 # Read-only Google Calendar (optional): a token written by scripts/
@@ -221,6 +223,19 @@ def calendar_read(days: int = 1) -> str:
         # rather than crashing the wake on a calendar/auth hiccup.
         return f"calendar read failed: {e}"
     return google_calendar.format_events(events)
+
+
+# --- Dev attention (read-only GitHub PR scan across active repos) ---
+
+@mcp.tool()
+def dev_prs() -> str:
+    """Attention-ordered scan of open PRs across Taylor's active dev repos
+    (PA_DEV_REPOS). Groups by what needs a human: merge conflicts, failing CI,
+    changes-requested, looks-merge-ready (with a verify-the-review-round
+    caveat), awaiting review, drafts. Read-only via the GitHub CLI; degrades to
+    a clear message when gh or the config is absent. Use it for the dev
+    briefing and whenever Taylor asks 'what needs me?' about dev work."""
+    return dev_attention.build_report(dev_attention.configured_repos())
 
 
 @mcp.tool()

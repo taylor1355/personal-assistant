@@ -39,6 +39,7 @@ See [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) for the full setup walk-t
 - [docs/LINEAR_CONVENTIONS.md](docs/LINEAR_CONVENTIONS.md) — labels, priorities, states, issue templates
 - [docs/VAULT_ORGANIZATION.md](docs/VAULT_ORGANIZATION.md) — frontmatter schemas + Bases view library
 - [docs/DEVOPS.md](docs/DEVOPS.md) — v2 dev-work spec
+- [docs/DEV_ATTENTION.md](docs/DEV_ATTENTION.md) — cross-repo dev attention bridge (PR digest, orchestrator handshake)
 
 ## Design philosophy
 
