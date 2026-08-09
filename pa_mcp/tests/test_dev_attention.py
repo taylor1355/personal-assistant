@@ -153,8 +153,16 @@ class BuildReportTest(unittest.TestCase):
         report = dev_attention.build_report(["o/r"], runner=runner, now=NOW)
         self.assertIn("mergeability not yet computed", report)
 
+    def test_malformed_record_degrades_instead_of_raising(self):
+        # The tool boundary promises "never raises": a gh record missing
+        # number/title, with updatedAt null, must still land in the report.
+        runner = fake_runner({"o/r": [{"mergeable": "MERGEABLE", "updatedAt": None}]})
+        report = dev_attention.build_report(["o/r"], runner=runner, now=NOW)
+        self.assertIn("#?", report)
+        self.assertIn("(untitled)", report)
+
     def test_full_page_notes_possible_truncation(self):
-        page = [pr(number=n) for n in range(dev_attention._PR_LIMIT)]
+        page = [pr(number=n) for n in range(dev_attention.PR_LIMIT)]
         report = dev_attention.build_report(
             ["o/full", "o/small"],
             runner=fake_runner({"o/full": page, "o/small": [pr(number=99)]}),

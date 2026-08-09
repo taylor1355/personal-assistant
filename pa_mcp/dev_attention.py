@@ -40,7 +40,8 @@ _PR_FIELDS = (
 
 # gh's --limit ceiling for one repo's scan. A repo returning exactly this many
 # rows may hold more; the report says so rather than silently under-reporting.
-_PR_LIMIT = 30
+# Public: tests pin the truncation behavior against it.
+PR_LIMIT = 30
 
 # Attention buckets, most decision-worthy first. The report preserves this order.
 BUCKET_ORDER = (
@@ -127,15 +128,19 @@ def _mergeability_note(pr: dict[str, Any]) -> str:
 
 
 def _format_pr(pr: dict[str, Any], repo: str, now: datetime) -> str:
+    # .get throughout: this runs outside build_report's per-repo try, and the
+    # module contract is "never raises at the tool boundary" — a malformed gh
+    # record degrades to placeholders instead of a traceback in a briefing.
     ci = _ci_state(pr.get("statusCheckRollup"))
-    age = _age_days(pr.get("updatedAt", ""), now)
+    age = _age_days(pr.get("updatedAt") or "", now)
     author = (pr.get("author") or {}).get("login", "")
     details = ", ".join(x for x in (
         f"ci {ci}" if ci != "none" else "", _mergeability_note(pr), age, author,
     ) if x)
     suffix = f" ({details})" if details else ""
     return (
-        f"- [{repo.split('/')[-1]}] #{pr['number']} {pr['title']}{suffix}\n"
+        f"- [{repo.split('/')[-1]}] #{pr.get('number', '?')} "
+        f"{pr.get('title', '(untitled)')}{suffix}\n"
         f"  {pr.get('url', '')}"
     )
 
@@ -145,7 +150,7 @@ def fetch_prs(repo: str, runner: Runner = subprocess.run) -> list[dict[str, Any]
     turning failures into controlled report text."""
     result = runner(
         ["gh", "pr", "list", "-R", repo, "--state", "open",
-         "--json", _PR_FIELDS, "--limit", str(_PR_LIMIT)],
+         "--json", _PR_FIELDS, "--limit", str(PR_LIMIT)],
         capture_output=True, text=True, timeout=60,
     )
     if result.returncode != 0:
@@ -178,8 +183,8 @@ def build_report(
         except (RuntimeError, OSError, json.JSONDecodeError, subprocess.SubprocessError) as e:
             errors.append(f"- {repo}: {e}")
             continue
-        if len(prs) >= _PR_LIMIT:
-            truncated.append(f"- {repo}: showing first {_PR_LIMIT} of possibly more open PRs")
+        if len(prs) >= PR_LIMIT:
+            truncated.append(f"- {repo}: showing first {PR_LIMIT} of possibly more open PRs")
         for pr in prs:
             total += 1
             buckets[classify(pr)].append(_format_pr(pr, repo, now))
@@ -190,7 +195,7 @@ def build_report(
         lines.append(f"\n{_BUCKET_HEADINGS[bucket]}:")
         lines.extend(buckets[bucket])
     if truncated:
-        lines.append("\nIncomplete scans (raise _PR_LIMIT or split the repo list):")
+        lines.append("\nIncomplete scans (more open PRs than this scan shows):")
         lines.extend(truncated)
     if errors:
         lines.append("\nRepos that could not be scanned:")
