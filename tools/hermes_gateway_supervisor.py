@@ -71,8 +71,23 @@ BACKOFF_SECONDS = [5, 15, 60, 300]
 # Grace period after launch before we confirm a new matching process appeared.
 RESTART_GRACE_SECONDS = 10
 
-# Fallback when HERMES_HOME is unset. A WARNING is logged when this is used.
+# Last-resort literal fallback when HERMES_HOME is unset AND %USERPROFILE% is
+# missing (e.g. a service context). Prefer the derived default — see
+# _fallback_hermes_home. A WARNING is logged whenever any fallback is used.
 FALLBACK_HERMES_HOME = r"C:\Users\taylor\Dev\hermes-home"
+
+
+def _fallback_hermes_home(env: dict[str, str]) -> str:
+    """Best-effort HERMES_HOME when the env var is unset.
+
+    Derived from %USERPROFILE% so committed source carries no per-user
+    absolute path; the literal above remains only for contexts where
+    USERPROFILE itself is unavailable.
+    """
+    userprofile = env.get("USERPROFILE")
+    if userprofile:
+        return str(Path(userprofile) / "Dev" / "hermes-home")
+    return FALLBACK_HERMES_HOME
 
 # Marker substring identifying THIS supervisor's own process in a cmdline.
 SUPERVISOR_MARKER = "hermes_gateway_supervisor.py"
@@ -504,10 +519,8 @@ class Config:
         env = environ if environ is not None else dict(os.environ)
         home_raw = env.get("HERMES_HOME")
         if not home_raw:
-            logger.warning(
-                "HERMES_HOME unset — falling back to %s", FALLBACK_HERMES_HOME
-            )
-            home_raw = FALLBACK_HERMES_HOME
+            home_raw = _fallback_hermes_home(env)
+            logger.warning("HERMES_HOME unset — falling back to %s", home_raw)
         home = Path(home_raw)
         logs = home / "logs"
         return cls(
@@ -626,7 +639,7 @@ def run_cycle(
         logger.warning("heartbeat write failed: %s", exc)
 
     if action.kind == ActionKind.RESTART and not dry_run:
-        next_state = _perform_restart(config, bnd, next_state)
+        next_state = _perform_restart(config, bnd, state, next_state)
     elif action.kind == ActionKind.RESTART and dry_run:
         logger.info("dry-run — would restart gateway (skipping launch)")
 
@@ -638,22 +651,30 @@ def run_cycle(
 def _perform_restart(
     config: Config,
     bnd: Boundaries,
-    state: SupervisorState,
+    pre_state: SupervisorState,
+    post_state: SupervisorState,
 ) -> SupervisorState:
-    """Re-verify death, launch, wait grace, confirm a matching process appeared."""
+    """Re-verify death, launch, wait grace, confirm a matching process appeared.
+
+    Returns post_state when a launch was attempted — even if the launch
+    itself failed, the gateway is still dead and the attempt counts toward
+    the circuit breaker. Returns pre_state when the re-check finds the
+    gateway already alive, so an aborted restart is not phantom-counted
+    toward the breaker.
+    """
     # Re-verify liveness immediately before launching — the gateway may have
     # come back on its own (or another supervisor beat us to it).
     pid_record, proc, _ = _observe(config, bnd)
     if classify_liveness(pid_record, proc) == Liveness.ALIVE:
         logger.info("restart aborted — gateway already alive on re-check")
-        return state
+        return pre_state
 
     logger.info("launching gateway via %s", config.gateway_cmd_path)
     try:
         bnd.launch_detached(config.gateway_cmd_path)
     except (OSError, subprocess.SubprocessError) as exc:
         logger.error("launch failed: %s", exc)
-        return state
+        return post_state
 
     bnd.sleep(RESTART_GRACE_SECONDS)
 
@@ -662,7 +683,7 @@ def _perform_restart(
         logger.info("restart confirmed — gateway is alive")
     else:
         logger.warning("restart unconfirmed — no matching gateway process after grace")
-    return state
+    return post_state
 
 
 # --------------------------------------------------------------------------
