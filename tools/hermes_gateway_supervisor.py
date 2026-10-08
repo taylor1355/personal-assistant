@@ -77,18 +77,6 @@ RESTART_GRACE_SECONDS = 10
 FALLBACK_HERMES_HOME = r"C:\Users\taylor\Dev\hermes-home"
 
 
-def _fallback_hermes_home(env: dict[str, str]) -> str:
-    """Best-effort HERMES_HOME when the env var is unset.
-
-    Derived from %USERPROFILE% so committed source carries no per-user
-    absolute path; the literal above remains only for contexts where
-    USERPROFILE itself is unavailable.
-    """
-    userprofile = env.get("USERPROFILE")
-    if userprofile:
-        return str(Path(userprofile) / "Dev" / "hermes-home")
-    return FALLBACK_HERMES_HOME
-
 # Marker substring identifying THIS supervisor's own process in a cmdline.
 SUPERVISOR_MARKER = "hermes_gateway_supervisor.py"
 
@@ -500,6 +488,19 @@ def apply_env_overrides(env: dict[str, str] | None = None) -> None:
     )
 
 
+def _fallback_hermes_home(env: dict[str, str]) -> str:
+    """Best-effort HERMES_HOME when the env var is unset.
+
+    Derived from %USERPROFILE% so the common case needs no per-user path;
+    the FALLBACK_HERMES_HOME literal remains only for contexts where
+    USERPROFILE itself is unavailable (e.g. a service context).
+    """
+    userprofile = env.get("USERPROFILE")
+    if userprofile:
+        return str(Path(userprofile) / "Dev" / "hermes-home")
+    return FALLBACK_HERMES_HOME
+
+
 @dataclass(frozen=True)
 class Config:
     """All derived paths, from HERMES_HOME. Tunables are module constants
@@ -663,10 +664,13 @@ def _perform_restart(
     toward the breaker.
     """
     # Re-verify liveness immediately before launching — the gateway may have
-    # come back on its own (or another supervisor beat us to it).
+    # come back on its own (or another supervisor beat us to it). Treat
+    # AMBIGUOUS as alive here too: classify_liveness documents AMBIGUOUS as
+    # do-not-restart, and launching on an unreadable cmdline risks a second
+    # gateway.
     pid_record, proc, _ = _observe(config, bnd)
-    if classify_liveness(pid_record, proc) == Liveness.ALIVE:
-        logger.info("restart aborted — gateway already alive on re-check")
+    if classify_liveness(pid_record, proc) in (Liveness.ALIVE, Liveness.AMBIGUOUS):
+        logger.info("restart aborted — gateway alive/ambiguous on re-check")
         return pre_state
 
     logger.info("launching gateway via %s", config.gateway_cmd_path)

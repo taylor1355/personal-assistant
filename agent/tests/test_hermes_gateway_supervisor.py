@@ -566,6 +566,22 @@ def test_perform_restart_aborts_when_gateway_already_alive(tmp_path: Path):
     assert result.restart_times == ()
 
 
+def test_perform_restart_aborts_when_gateway_ambiguous(tmp_path: Path):
+    cfg = s.Config.from_env({"HERMES_HOME": str(tmp_path)})
+    # find_process returns python.exe with an unreadable cmdline -> AMBIGUOUS.
+    # The re-check must treat that as alive (do-not-restart): launching here
+    # risks a second gateway. The pre-decision state is returned so the
+    # aborted restart is not phantom-counted toward the circuit breaker.
+    bnd, calls = _fake_boundaries(pid_record=_PID_RECORD, proc=_proc(cmdline=""))
+    pre = s.SupervisorState()
+    post = pre.record_restart(T0)
+    result = s._perform_restart(cfg, bnd, pre, post)
+    assert calls["launched"] == 0
+    assert result is pre
+    assert result.consecutive_failures == 0
+    assert result.restart_times == ()
+
+
 def test_perform_restart_swallows_launch_error(tmp_path: Path):
     cfg = s.Config.from_env({"HERMES_HOME": str(tmp_path)})
     bnd, calls = _fake_boundaries(pid_record=_PID_RECORD, proc=None)

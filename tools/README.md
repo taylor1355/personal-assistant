@@ -85,9 +85,11 @@ python tools/hermes_gateway_supervisor.py --dry-run --once
 python tools/hermes_gateway_supervisor.py --once
 ```
 
-**Configuration** — `HERMES_HOME` (env; falls back to
-`C:\Users\taylor\Dev\hermes-home` with a warning) plus these tunables, each
-overridable via env var:
+**Configuration** — `HERMES_HOME` (env; when unset, derived from
+`%USERPROFILE%\Dev\hermes-home`, with the `C:\Users\taylor\...` literal as a
+last resort only when `USERPROFILE` itself is missing; a warning is logged
+whenever any fallback is used) plus these tunables, each overridable via env
+var:
 
 | Env var | Default | Meaning |
 |---|---|---|
