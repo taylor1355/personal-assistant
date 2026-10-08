@@ -463,6 +463,11 @@ def test_config_from_env_falls_back_without_hermes_home():
     assert cfg.hermes_home == Path(s.FALLBACK_HERMES_HOME)
 
 
+def test_config_from_env_derives_fallback_from_userprofile():
+    cfg = s.Config.from_env({"USERPROFILE": "C:\\Users\\someone"})
+    assert cfg.hermes_home == Path("C:\\Users\\someone") / "Dev" / "hermes-home"
+
+
 def test_apply_env_overrides_sets_poll(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(s, "POLL_SECONDS", 30)
     s.apply_env_overrides({"SUPERVISOR_POLL_SECONDS": "7"})
@@ -548,10 +553,17 @@ def test_run_cycle_dry_run_never_launches(tmp_path: Path):
 
 def test_perform_restart_aborts_when_gateway_already_alive(tmp_path: Path):
     cfg = s.Config.from_env({"HERMES_HOME": str(tmp_path)})
-    # find_process returns a live gateway -> re-check says ALIVE -> no launch.
+    # find_process returns a live gateway -> re-check says ALIVE -> no launch,
+    # and the pre-decision state is returned so the aborted restart is not
+    # phantom-counted toward the circuit breaker.
     bnd, calls = _fake_boundaries(pid_record=_PID_RECORD, proc=_proc(cmdline=_GATEWAY_CMDLINE))
-    s._perform_restart(cfg, bnd, s.SupervisorState().record_restart(T0))
+    pre = s.SupervisorState()
+    post = pre.record_restart(T0)
+    result = s._perform_restart(cfg, bnd, pre, post)
     assert calls["launched"] == 0
+    assert result is pre
+    assert result.consecutive_failures == 0
+    assert result.restart_times == ()
 
 
 def test_perform_restart_swallows_launch_error(tmp_path: Path):
@@ -562,9 +574,10 @@ def test_perform_restart_swallows_launch_error(tmp_path: Path):
         raise OSError("cannot spawn")
 
     bnd.launch_detached = boom
-    # Must not propagate; returns the state it was given.
-    prior = s.SupervisorState().record_restart(T0)
-    assert s._perform_restart(cfg, bnd, prior) is prior
+    # Must not propagate; a failed launch still counts (gateway is still dead).
+    pre = s.SupervisorState()
+    post = pre.record_restart(T0)
+    assert s._perform_restart(cfg, bnd, pre, post) is post
 
 
 def test_perform_restart_confirms_when_alive_after_grace(tmp_path: Path):
@@ -587,7 +600,9 @@ def test_perform_restart_confirms_when_alive_after_grace(tmp_path: Path):
         now=lambda: T0,
         sleep=lambda secs: None,
     )
-    s._perform_restart(cfg, bnd, s.SupervisorState().record_restart(T0))
+    pre = s.SupervisorState()
+    post = pre.record_restart(T0)
+    assert s._perform_restart(cfg, bnd, pre, post) is post
     assert launched == [1]
 
 
