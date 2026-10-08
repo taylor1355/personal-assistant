@@ -77,6 +77,10 @@ _linear = _linear_cli.LinearClient(repo_root=REPO_ROOT)
 # clean — no _load_module dance needed here.
 sys.path.insert(0, str(REPO_ROOT / "agent" / "src"))
 from personal_assistant_agent import google_calendar  # noqa: E402
+from personal_assistant_agent.memory import (  # noqa: E402
+    get_context as _memory_get_context,
+)
+from personal_assistant_agent.memory import refresh as _memory_refresh
 from personal_assistant_agent.tools.proposal_enqueue import (  # noqa: E402
     ProposalCollisionError,
     build_proposal,
@@ -187,6 +191,47 @@ def linear_link(blocker: str, blocked: str) -> str:
 # --- Assistant-owned writes (briefings / digests — NOT user content) ---
 
 ASSISTANT_ROOT = "00 - Assistant"
+
+
+@mcp.tool()
+def memory_world_map() -> str:
+    """Authoritative map of the vault's folder taxonomy (PA-102 substrate).
+
+    Returns the folder list as JSON: exact paths, normalized lookup names,
+    note counts. USE THIS to resolve folder paths — never guess a numbered
+    folder like '06 - Learning' again; the map is the source of truth."""
+    ctx = _memory_get_context(VAULT_ROOT, assistant_root=ASSISTANT_ROOT)
+    return ctx.world_map_json()
+
+
+@mcp.tool()
+def memory_continuity(days: int = 2) -> str:
+    """Day-to-day continuity from the memory substrate (PA-102): what got
+    done and what changed over the last `days` days. Read this for
+    "yesterday, what got done" instead of re-deriving it."""
+    ctx = _memory_get_context(VAULT_ROOT, days=days, assistant_root=ASSISTANT_ROOT)
+    return ctx.continuity or "(no continuity recorded yet — run memory_refresh)"
+
+
+@mcp.tool()
+def memory_refresh() -> str:
+    """Refresh the memory substrate (PA-102): rebuild the vault world-map,
+    snapshot Linear issue states, detect completions, append a continuity
+    entry. Safe to run on every wake — completions surface exactly once.
+    Call this before composing a briefing/review when the substrate may be
+    stale."""
+    report = _memory_refresh(VAULT_ROOT, _linear, assistant_root=ASSISTANT_ROOT)
+    lines = [
+        f"world-map rebuilt: {report.world_map_built}",
+        f"projects snapshotted: {', '.join(report.projects_snapshotted) or '(none)'}",
+    ]
+    if report.completions:
+        lines.append("new completions:")
+        lines.extend(f"  - {c.identifier}: {c.title} → {c.state}" for c in report.completions)
+    else:
+        lines.append("new completions: none")
+    lines.extend(f"note: {n}" for n in report.notes)
+    return "\n".join(lines)
 
 
 @mcp.tool()

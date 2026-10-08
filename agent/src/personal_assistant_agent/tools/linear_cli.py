@@ -18,7 +18,10 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from personal_assistant_agent.memory.completion import IssueState
 
 
 class LinearError(RuntimeError):
@@ -92,6 +95,30 @@ class LinearClient:
 
     def project(self, name: str) -> str:
         return self._run("project", name)
+
+    def project_states(self, name: str) -> list[IssueState]:
+        """Structured issue states for a project (PA-102 completion snapshots).
+
+        Calls the ``project-states`` CLI command, which emits one JSON object
+        per line: ``{identifier, title, state, updatedAt}``.
+        """
+        from personal_assistant_agent.memory.completion import IssueState
+
+        states: list[IssueState] = []
+        for line in self._run("project-states", name).splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            obj = json.loads(line)
+            states.append(
+                IssueState(
+                    identifier=obj["identifier"],
+                    title=obj["title"],
+                    state=obj["state"],
+                    updated_at=obj["updatedAt"],
+                )
+            )
+        return states
 
     # --- Auto-applied writes ---
 

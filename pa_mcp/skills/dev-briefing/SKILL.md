@@ -15,12 +15,15 @@ daily briefing.
 
 ## Gather FIRST — do not skip
 
-**You MUST call `today`, `dev_prs`, and `linear_board` BEFORE writing
-anything.** Compose only from what the tools return. Never invent PRs, issues,
-or review states.
+**You MUST call `today`, `dev_prs`, `linear_board`, and `memory_refresh` BEFORE
+writing anything.** Compose only from what the tools return. Never invent PRs,
+issues, or review states.
 
 1. `today` → the date; use it for the filename.
-2. `dev_prs` → open PRs across the configured repos, already grouped by
+2. `memory_refresh` → refresh the substrate (snapshots the Dev backlog's issue
+   states); `memory_continuity` (2 days) → recently completed dev items, so the
+   briefing can note what shipped and never re-surface finished work.
+3. `dev_prs` → open PRs across the configured repos, already grouped by
    attention bucket. If it reports "not configured", say so in one line and
    continue with what you have.
 3. `linear_board` → the PA dev backlog (this workspace only; the npc-simulation

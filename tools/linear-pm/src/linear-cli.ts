@@ -243,6 +243,32 @@ async function projectInfo(projectName: string) {
   }
 }
 
+async function projectStates(projectName: string) {
+  // Machine-readable issue states for the memory substrate's completion
+  // detection (PA-102): one JSON object per line, no grouping or filtering.
+  const projects = await client.projects({ first: 50 });
+  const project = projects.nodes.find(
+    (p) => p.name.toLowerCase() === projectName.toLowerCase()
+  );
+  if (!project) {
+    console.error(`Project "${projectName}" not found.`);
+    process.exitCode = 1;
+    return;
+  }
+  const issues = await project.issues({ first: 250 });
+  for (const issue of issues.nodes) {
+    const state = await issue.state;
+    console.log(
+      JSON.stringify({
+        identifier: issue.identifier,
+        title: issue.title,
+        state: state?.name ?? "Unknown",
+        updatedAt: issue.updatedAt,
+      })
+    );
+  }
+}
+
 async function issueInfo(identifier: string) {
   const issue = await findByIdentifier(identifier);
   if (!issue) {
@@ -818,6 +844,9 @@ async function main() {
       break;
     case "project":
       await projectInfo(args.join(" "));
+      break;
+    case "project-states":
+      await projectStates(args.join(" "));
       break;
     case "issue":
       await issueInfo(args[0]!);
