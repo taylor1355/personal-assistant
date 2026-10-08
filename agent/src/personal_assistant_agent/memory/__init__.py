@@ -22,8 +22,11 @@ from __future__ import annotations
 
 from personal_assistant_agent.memory.completion import (
     Completion,
+    CompletionSource,
     IssueState,
+    StateType,
     diff_snapshots,
+    is_terminal,
 )
 from personal_assistant_agent.memory.continuity import (
     read_recent_entries,
@@ -45,13 +48,16 @@ from personal_assistant_agent.memory.world_map import (
 __all__ = [
     "MEMORY_DIR_NAME",
     "Completion",
+    "CompletionSource",
     "IssueState",
     "RefreshReport",
+    "StateType",
     "WorldMap",
     "build_world_map",
     "diff_snapshots",
     "find_folder",
     "get_context",
+    "is_terminal",
     "load_world_map",
     "read_recent_entries",
     "refresh",

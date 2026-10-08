@@ -9,10 +9,16 @@ in one shot: the world-map plus recent continuity.
 The substrate lives under ``00 - Assistant/Memory/`` in the vault (the
 agent's own working area, like briefings) — never user content, so no
 proposal-queue involvement.
+
+Which Linear projects feed completion awareness is per-user configuration
+(``config/user.yaml`` → ``memory.projects``); callers pass them in — there
+are no project names hardcoded here.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
@@ -33,13 +39,10 @@ from personal_assistant_agent.memory.world_map import (
     load_world_map,
 )
 
+logger = logging.getLogger(__name__)
+
 #: Subdirectory of ``00 - Assistant/`` holding all substrate files.
 MEMORY_DIR_NAME = "Memory"
-
-#: Linear projects whose issue states feed completion awareness. The Personal
-#: project holds Taylor's life-tasks (the briefing backbone); Dev holds the
-#: assistant's own backlog (the dev-briefing backbone).
-DEFAULT_PROJECTS = ("Personal", "Dev")
 
 
 class IssueStateSource(Protocol):
@@ -68,14 +71,21 @@ def refresh(
     vault_root: Path,
     linear: IssueStateSource,
     *,
-    projects: tuple[str, ...] = DEFAULT_PROJECTS,
+    projects: tuple[str, ...],
     assistant_root: str = "00 - Assistant",
+    now: datetime | None = None,
 ) -> RefreshReport:
     """Rebuild the substrate: world-map, Linear snapshots, continuity entry.
 
     Safe to run on every wake — snapshots diff idempotently (already-seen
-    completions are not re-reported) and continuity entries append.
+    completions are not re-reported; a first run seeds silently) and
+    continuity entries append. ``projects`` comes from user config
+    (``config/user.yaml`` → ``memory.projects``).
     """
+    # Imported here, not at module top: tools.linear_cli imports
+    # memory.completion, so a top-level import would be circular.
+    from personal_assistant_agent.tools.linear_cli import LinearError
+
     memory_dir = _memory_dir(vault_root, assistant_root)
     report = RefreshReport(world_map_built=False)
 
@@ -90,12 +100,13 @@ def refresh(
     for project in projects:
         try:
             states = {s.identifier: s for s in linear.project_states(project)}
-        except Exception as e:  # noqa: BLE001 — one bad project must not kill the refresh
+        except LinearError as e:
+            logger.warning("snapshot of %r failed: %s", project, e)
             report.notes.append(f"snapshot of {project!r} failed: {e}")
             continue
         new_snapshots[project] = states
         old = old_snapshots.get(project, {})
-        for completion in diff_snapshots(old, states):
+        for completion in diff_snapshots(old, states, project=project):
             report.completions.append(completion)
         report.projects_snapshotted += (project,)
     # Merge: keep projects we failed to snapshot this run at their old state.
@@ -105,6 +116,7 @@ def refresh(
     # 3. Continuity entry — always written, even when nothing changed.
     write_continuity_entry(
         memory_dir,
+        now=now,
         completions=report.completions,
         notes=report.notes,
     )
@@ -127,10 +139,17 @@ def get_context(
     *,
     days: int = 2,
     assistant_root: str = "00 - Assistant",
+    project: str | None = None,
+    now: datetime | None = None,
 ) -> SubstrateContext:
-    """Read the substrate without mutating it. Cheap — call on every wake."""
+    """Read the substrate without mutating it. Cheap — call on every wake.
+
+    When ``project`` is given, continuity entries are filtered to that
+    project's completions (e.g. the personal daily briefing reads
+    ``project="Personal"`` so dev completions never leak in).
+    """
     memory_dir = _memory_dir(vault_root, assistant_root)
     return SubstrateContext(
         world_map=load_world_map(memory_dir),
-        continuity=read_recent_entries(memory_dir, days=days),
+        continuity=read_recent_entries(memory_dir, days=days, now=now, project=project),
     )

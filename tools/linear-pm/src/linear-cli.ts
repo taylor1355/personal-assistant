@@ -243,6 +243,18 @@ async function projectInfo(projectName: string) {
   }
 }
 
+// One JSONL record from the `project-states` command (PA-102).
+// Python mirror: agent/src/personal_assistant_agent/tools/linear_cli.py ::
+// ProjectStateLine — the field names must stay in sync (the audit skill
+// checks this boundary).
+type ProjectStateLine = {
+  identifier: string;
+  title: string;
+  state: string; // workflow-state display name, e.g. "In Progress"
+  stateType: string; // workflow-state type: "completed" | "canceled" | "started" | ...
+  updatedAt: string; // ISO-8601
+};
+
 async function projectStates(projectName: string) {
   // Machine-readable issue states for the memory substrate's completion
   // detection (PA-102): one JSON object per line, no grouping or filtering.
@@ -255,17 +267,63 @@ async function projectStates(projectName: string) {
     process.exitCode = 1;
     return;
   }
-  const issues = await project.issues({ first: 250 });
-  for (const issue of issues.nodes) {
-    const state = await issue.state;
-    console.log(
-      JSON.stringify({
-        identifier: issue.identifier,
-        title: issue.title,
-        state: state?.name ?? "Unknown",
-        updatedAt: issue.updatedAt,
-      })
+  // One GraphQL request per page with `state` selected inline. The SDK's
+  // lazy `await issue.state` would cost one extra API call per issue (N+1:
+  // up to 250 per project per refresh). Pages are walked to completion:
+  // `first: 250` alone silently truncates larger projects, and a Done issue
+  // falling out of the window would be re-reported as a completion when it
+  // re-enters (the pagination half of PA-102's stale-done bug).
+  const query = `
+    query ProjectIssueStates($projectId: String!, $after: String) {
+      project(id: $projectId) {
+        issues(first: 250, after: $after, orderBy: updatedAt) {
+          nodes {
+            identifier
+            title
+            updatedAt
+            state { name type }
+          }
+          pageInfo { hasNextPage endCursor }
+        }
+      }
+    }`;
+  type ProjectIssuesData = {
+    project: {
+      issues: {
+        nodes: Array<{
+          identifier: string;
+          title: string;
+          updatedAt: string;
+          state: { name: string; type: string } | null;
+        }>;
+        pageInfo: { hasNextPage: boolean; endCursor: string };
+      };
+    };
+  };
+  type ProjectIssuesVars = { projectId: string; after?: string };
+  let after: string | undefined = undefined;
+  for (;;) {
+    const res = await client.client.rawRequest<ProjectIssuesData, ProjectIssuesVars>(
+      query,
+      { projectId: project.id, after }
     );
+    if (res.errors?.length) {
+      throw new Error(`projectStates query failed: ${JSON.stringify(res.errors)}`);
+    }
+    const conn = res.data?.project?.issues;
+    if (!conn) break;
+    for (const n of conn.nodes) {
+      const line: ProjectStateLine = {
+        identifier: n.identifier,
+        title: n.title,
+        state: n.state?.name ?? "Unknown",
+        stateType: n.state?.type ?? "unknown",
+        updatedAt: n.updatedAt,
+      };
+      console.log(JSON.stringify(line));
+    }
+    if (!conn.pageInfo.hasNextPage) break;
+    after = conn.pageInfo.endCursor;
   }
 }
 

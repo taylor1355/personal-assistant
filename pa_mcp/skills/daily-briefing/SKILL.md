@@ -26,8 +26,10 @@ Steps:
    completion detection). Then `memory_world_map` → the authoritative vault folder
    taxonomy. **Resolve every vault path through the world-map** — never guess a
    numbered folder; the map is the source of truth.
-3. `memory_continuity` (2 days) → what got done recently; use it for a "recently
-   completed" note and to avoid re-surfacing finished items.
+3. `memory_continuity` (2 days, project "Personal") → what got done recently;
+   use it for a "recently completed" note and to avoid re-surfacing finished
+   items. This briefing is personal-only: the project filter keeps dev-backlog
+   completions out.
 4. `calendar_read` → today's events (read-only). "No events." = a clear day; a
    "not configured/failed" message → say the calendar is unavailable in one line.
    Never invent events.

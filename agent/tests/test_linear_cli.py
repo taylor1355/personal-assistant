@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from personal_assistant_agent.memory.completion import StateType
 from personal_assistant_agent.tools.linear_cli import LinearClient, LinearError
 
 
@@ -273,3 +274,73 @@ def test_returns_stdout_on_success(
     c = LinearClient(repo_root=fake_repo, api_key="k")
     out = c.status()
     assert out == "ok"
+
+
+# --- project_states (PA-102) ---
+
+
+def _project_states_client(
+    fake_repo: Path, monkeypatch: pytest.MonkeyPatch, stdout: str
+) -> LinearClient:
+    def _fake(cmd, **kwargs):  # type: ignore[no-untyped-def]
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(subprocess, "run", _fake)
+    return LinearClient(repo_root=fake_repo, api_key="k")
+
+
+def test_project_states_happy_path(
+    fake_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stdout = (
+        '{"identifier": "PA-1", "title": "Buy milk", "state": "Done", '
+        '"stateType": "completed", "updatedAt": "2026-10-08T00:00:00Z"}\n'
+        '\n'  # blank lines are skipped
+        '{"identifier": "PA-2", "title": "Write more", "state": "In Progress", '
+        '"stateType": "started", "updatedAt": "2026-10-08T00:00:00Z"}\n'
+    )
+    c = _project_states_client(fake_repo, monkeypatch, stdout)
+    states = c.project_states("Personal")
+    assert [s.identifier for s in states] == ["PA-1", "PA-2"]
+    assert states[0].state_type == StateType.COMPLETED
+    assert states[1].state_type == StateType.STARTED
+
+
+def test_project_states_unknown_state_type_becomes_unknown(
+    fake_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stdout = (
+        '{"identifier": "PA-1", "title": "t", "state": "Weird", '
+        '"stateType": "from-the-future", "updatedAt": "2026-10-08T00:00:00Z"}\n'
+    )
+    c = _project_states_client(fake_repo, monkeypatch, stdout)
+    (state,) = c.project_states("Personal")
+    assert state.state_type == StateType.UNKNOWN
+
+
+def test_project_states_malformed_line_raises_LinearError(
+    fake_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stdout = (
+        '{"identifier": "PA-1", "title": "t", "state": "Done", '
+        '"stateType": "completed", "updatedAt": "2026-10-08T00:00:00Z"}\n'
+        "this is not json\n"
+    )
+    c = _project_states_client(fake_repo, monkeypatch, stdout)
+    with pytest.raises(LinearError) as excinfo:
+        c.project_states("Personal")
+    assert "this is not json" in excinfo.value.stdout
+
+
+def test_project_states_missing_field_raises_LinearError(
+    fake_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # extra="forbid" + required fields: a record missing stateType is a
+    # contract break, not something to silently accept.
+    stdout = (
+        '{"identifier": "PA-1", "title": "t", "state": "Done", '
+        '"updatedAt": "2026-10-08T00:00:00Z"}\n'
+    )
+    c = _project_states_client(fake_repo, monkeypatch, stdout)
+    with pytest.raises(LinearError):
+        c.project_states("Personal")

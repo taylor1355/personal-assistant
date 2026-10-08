@@ -37,6 +37,52 @@ GOOGLE_CALENDAR_TOKEN = os.environ.get("GOOGLE_CALENDAR_TOKEN", "")
 GOOGLE_CALENDAR_ID = os.environ.get("GOOGLE_CALENDAR_ID", "primary")
 
 
+def _load_user_config() -> dict:
+    """Read ``config/user.yaml`` (per-user, gitignored).
+
+    Returns {} when absent or unreadable — callers fall back to the
+    opinionated defaults documented in ``config/user.yaml.example``.
+    """
+    try:
+        import yaml
+    except ImportError:
+        return {}
+    path = REPO_ROOT / "config" / "user.yaml"
+    if not path.is_file():
+        return {}
+    try:
+        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return {}
+
+
+_USER_CONFIG = _load_user_config()
+
+# Linear projects whose issue states feed the memory substrate's completion
+# awareness (PA-102). Per-user config — see config/user.yaml.example.
+MEMORY_PROJECTS: tuple[str, ...] = tuple(
+    _USER_CONFIG.get("memory", {}).get("projects", ["Personal", "Dev"])
+)
+
+
+def _local_now() -> datetime:
+    """Now in the user's configured timezone (config/user.yaml → user.timezone).
+
+    Falls back to system local time when unconfigured or unparseable — the
+    substrate buckets continuity entries by local day, and a wrong zone puts
+    evening completions in tomorrow's file.
+    """
+    tz_name = _USER_CONFIG.get("user", {}).get("timezone", "")
+    if tz_name:
+        try:
+            from zoneinfo import ZoneInfo
+
+            return datetime.now(ZoneInfo(tz_name))
+        except (ImportError, ValueError):
+            pass
+    return datetime.now(UTC).astimezone()
+
+
 def _load_module(name: str, path: Path) -> ModuleType:
     """Load a single .py file as a standalone module, bypassing package import.
 
@@ -80,7 +126,7 @@ from personal_assistant_agent import google_calendar  # noqa: E402
 from personal_assistant_agent.memory import (  # noqa: E402
     get_context as _memory_get_context,
 )
-from personal_assistant_agent.memory import refresh as _memory_refresh
+from personal_assistant_agent.memory import refresh as _memory_refresh  # noqa: E402
 from personal_assistant_agent.tools.proposal_enqueue import (  # noqa: E402
     ProposalCollisionError,
     build_proposal,
@@ -205,11 +251,16 @@ def memory_world_map() -> str:
 
 
 @mcp.tool()
-def memory_continuity(days: int = 2) -> str:
+def memory_continuity(days: int = 2, project: str | None = None) -> str:
     """Day-to-day continuity from the memory substrate (PA-102): what got
     done and what changed over the last `days` days. Read this for
-    "yesterday, what got done" instead of re-deriving it."""
-    ctx = _memory_get_context(VAULT_ROOT, days=days, assistant_root=ASSISTANT_ROOT)
+    "yesterday, what got done" instead of re-deriving it. Pass `project`
+    to see only that Linear project's completions (e.g. "Personal" for the
+    daily briefing, which is personal-only; "Dev" for the dev briefing)."""
+    ctx = _memory_get_context(
+        VAULT_ROOT, days=days, assistant_root=ASSISTANT_ROOT,
+        project=project, now=_local_now(),
+    )
     return ctx.continuity or "(no continuity recorded yet — run memory_refresh)"
 
 
@@ -220,14 +271,20 @@ def memory_refresh() -> str:
     entry. Safe to run on every wake — completions surface exactly once.
     Call this before composing a briefing/review when the substrate may be
     stale."""
-    report = _memory_refresh(VAULT_ROOT, _linear, assistant_root=ASSISTANT_ROOT)
+    report = _memory_refresh(
+        VAULT_ROOT, _linear, projects=MEMORY_PROJECTS,
+        assistant_root=ASSISTANT_ROOT, now=_local_now(),
+    )
     lines = [
         f"world-map rebuilt: {report.world_map_built}",
         f"projects snapshotted: {', '.join(report.projects_snapshotted) or '(none)'}",
     ]
     if report.completions:
         lines.append("new completions:")
-        lines.extend(f"  - {c.identifier}: {c.title} → {c.state}" for c in report.completions)
+        lines.extend(
+            f"  - [{c.project}] {c.identifier}: {c.title} → {c.state}"
+            for c in report.completions
+        )
     else:
         lines.append("new completions: none")
     lines.extend(f"note: {n}" for n in report.notes)

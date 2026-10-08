@@ -33,3 +33,11 @@ subagents:
   vault_organizer: false
   research: false
   reading: false
+
+memory:
+  # Linear projects whose issue states feed the memory substrate's
+  # completion awareness (PA-102). The substrate snapshots each project's
+  # states on refresh and reports newly-completed issues exactly once.
+  # Personal: Taylor's life-tasks (the daily briefing's backbone).
+  # Dev: the assistant's own backlog (the dev briefing's backbone).
+  projects: ["Personal", "Dev"]

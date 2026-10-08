@@ -11,7 +11,7 @@ invariant is enforced by **toolset lockdown** — the orchestrator is given only
 `mcp-pa-tools` (+ skills/memory), never Hermes' `terminal`/`file` toolsets, so
 it cannot mutate user state outside these typed tools.
 
-## Tools (18)
+## Tools (21)
 
 `vault_read`, `vault_list` · `linear_board`, `linear_todo`, `linear_next`,
 `linear_issue`, `linear_search`, `linear_personal` (reads) · `linear_create`,
@@ -19,6 +19,8 @@ it cannot mutate user state outside these typed tools.
 (planning writes) · `today`, `calendar_read` (read-only Google Calendar;
 degrades gracefully if unconfigured) · `dev_prs` (read-only GitHub PR attention
 scan across `PA_DEV_REPOS`; see [docs/DEV_ATTENTION.md](../docs/DEV_ATTENTION.md))
+· `memory_world_map`, `memory_continuity`, `memory_refresh` (PA-102 memory
+substrate: vault folder taxonomy, recent completions, substrate refresh)
 · `assistant_write` (assistant-owned vault area, `00 - Assistant/`) · `propose`
 (queues a change to user state for approval — the only write path outside
 `00 - Assistant/`; writes a pending proposal, never applies it).
@@ -97,6 +99,6 @@ platform_toolsets:
 Verify and run:
 
 ```bash
-hermes mcp test pa-tools                          # -> Connected / 15 tools
+hermes mcp test pa-tools                          # -> Connected / 21 tools
 hermes --ignore-rules -z "brief me on my vault and Linear board"
 ```
