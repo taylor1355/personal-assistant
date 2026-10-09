@@ -20,9 +20,13 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+from personal_assistant_agent.memory.completion import IssueState, StateType
+
 
 class LinearError(RuntimeError):
-    """Raised when the Linear CLI exits non-zero."""
+    """Raised when the Linear CLI exits non-zero, or its output is unparseable."""
 
     def __init__(self, returncode: int, stdout: str, stderr: str, cmd: list[str]) -> None:
         self.returncode = returncode
@@ -31,6 +35,38 @@ class LinearError(RuntimeError):
         self.cmd = cmd
         super().__init__(
             f"linear-cli exited {returncode}: {stderr.strip() or stdout.strip() or '(no output)'}"
+        )
+
+
+class ProjectStateLine(BaseModel):
+    """One JSONL record from ``linear project-states``.
+
+    TS mirror: tools/linear-pm/src/linear-cli.ts :: ProjectStateLine — the
+    field names must stay in sync (the audit skill checks this boundary).
+    ``state_type`` is kept as a string here and coerced to
+    :class:`StateType` on conversion: an unfamiliar type from a future Linear
+    schema becomes ``UNKNOWN``, never a crash.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
+
+    identifier: str
+    title: str
+    state: str
+    state_type: str = Field(alias="stateType")
+    updated_at: str = Field(alias="updatedAt")
+
+    def to_issue_state(self) -> IssueState:
+        try:
+            state_type = StateType(self.state_type)
+        except ValueError:
+            state_type = StateType.UNKNOWN
+        return IssueState(
+            identifier=self.identifier,
+            title=self.title,
+            state=self.state,
+            state_type=state_type,
+            updated_at=self.updated_at,
         )
 
 
@@ -92,6 +128,33 @@ class LinearClient:
 
     def project(self, name: str) -> str:
         return self._run("project", name)
+
+    def project_states(self, name: str) -> list[IssueState]:
+        """Structured issue states for a project (PA-102 completion snapshots).
+
+        Calls the ``project-states`` CLI command, which emits one JSON object
+        per line: ``{identifier, title, state, stateType, updatedAt}``.
+        Unparseable lines raise :class:`LinearError` with the offending line
+        attached — a corrupt CLI contract must fail loudly, not silently
+        drop issues from the snapshot.
+        """
+        cmd = ["project-states", name]
+        states: list[IssueState] = []
+        for lineno, line in enumerate(self._run(*cmd).splitlines(), start=1):
+            text = line.strip()
+            if not text:
+                continue
+            try:
+                parsed = ProjectStateLine(**json.loads(text))
+            except (json.JSONDecodeError, ValidationError) as e:
+                raise LinearError(
+                    -1,
+                    text,
+                    f"unparseable project-states line {lineno}: {e}",
+                    cmd,
+                ) from e
+            states.append(parsed.to_issue_state())
+        return states
 
     # --- Auto-applied writes ---
 

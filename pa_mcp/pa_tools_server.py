@@ -7,9 +7,11 @@ via ``platform_toolsets`` (read + plan only). The orchestrator is never handed
 Hermes' ``terminal``/``file`` toolsets, so it cannot mutate user state outside
 these typed tools — the proposal-queue invariant, enforced by construction.
 
-The existing stdlib-only helpers (``read_vault_file``, ``LinearClient``) are
-loaded directly from the ``personal_assistant_agent`` package files, so this
-server carries no dependency on the retired NeMo agent runtime.
+The existing stdlib-only helper (``read_vault_file``) is loaded directly from
+its file, so this server carries no dependency on the retired NeMo agent
+runtime. ``LinearClient`` is imported from the installed package (not via
+standalone module loading) so its ``LinearError`` is the same class object
+that ``memory.substrate`` catches.
 
 Environment:
   PA_REPO_ROOT  a PA checkout containing ``tools/linear-pm`` + ``.env`` (Linear creds)
@@ -18,16 +20,20 @@ Environment:
 from __future__ import annotations
 
 import importlib.util
+import logging
 import os
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import ModuleType
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import ValidationError
 
 import dev_attention  # sibling module (script dir is on sys.path when run by Hermes)
+
+logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(os.environ.get("PA_REPO_ROOT", "")).expanduser()
 VAULT_ROOT = Path(os.environ.get("VAULT_ROOT", "")).expanduser()
@@ -35,6 +41,77 @@ VAULT_ROOT = Path(os.environ.get("VAULT_ROOT", "")).expanduser()
 # google_oauth_setup.py. Absent → calendar_read degrades to a clear message.
 GOOGLE_CALENDAR_TOKEN = os.environ.get("GOOGLE_CALENDAR_TOKEN", "")
 GOOGLE_CALENDAR_ID = os.environ.get("GOOGLE_CALENDAR_ID", "primary")
+
+
+def _load_user_config() -> dict:
+    """Read ``config/user.yaml`` (per-user, gitignored).
+
+    Returns {} when absent or unreadable — callers fall back to the
+    opinionated defaults documented in ``config/user.yaml.example``.
+    Logs a warning when the file exists but can't be parsed, so a broken
+    config doesn't silently fall back to defaults.
+    """
+    try:
+        import yaml
+    except ImportError:
+        logger.warning("PyYAML not installed; using default config")
+        return {}
+    path = REPO_ROOT / "config" / "user.yaml"
+    if not path.is_file():
+        return {}
+    try:
+        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError) as e:
+        logger.warning("could not parse %s (%s); using default config", path, e)
+        return {}
+
+
+_USER_CONFIG = _load_user_config()
+
+# Linear projects whose issue states feed the memory substrate's completion
+# awareness (PA-102). Per-user config — see config/user.yaml.example.
+def _memory_projects(config: dict) -> tuple[str, ...]:
+    """Extract the project list, defensively.
+
+    ``memory:`` as a bare YAML key parses to None, and ``projects: Personal``
+    (a string) would otherwise become a tuple of characters. Fall back to the
+    defaults on any shape mismatch.
+    """
+    memory = config.get("memory")
+    if not isinstance(memory, dict):
+        return ("Personal", "Dev")
+    projects = memory.get("projects", ["Personal", "Dev"])
+    if isinstance(projects, str):
+        projects = [projects]
+    if not isinstance(projects, (list, tuple)) or not all(
+        isinstance(p, str) for p in projects
+    ):
+        logger.warning("config memory.projects has unexpected shape; using defaults")
+        return ("Personal", "Dev")
+    return tuple(projects)
+
+
+MEMORY_PROJECTS: tuple[str, ...] = _memory_projects(_USER_CONFIG)
+
+
+def _local_now() -> datetime:
+    """Now in the user's configured timezone (config/user.yaml → user.timezone).
+
+    Falls back to system local time when unconfigured or unparseable — the
+    substrate buckets continuity entries by local day, and a wrong zone puts
+    evening completions in tomorrow's file.
+    """
+    tz_name = _USER_CONFIG.get("user", {}).get("timezone", "")
+    if tz_name:
+        try:
+            return datetime.now(ZoneInfo(tz_name))
+        except ZoneInfoNotFoundError as e:
+            # ZoneInfoNotFoundError subclasses KeyError, not ValueError —
+            # a typo like "America/New_Yrok" must not silently fall back.
+            logger.warning("invalid user.timezone %r (%s); using system local time", tz_name, e)
+        except ValueError as e:
+            logger.warning("invalid user.timezone %r (%s); using system local time", tz_name, e)
+    return datetime.now(UTC).astimezone()
 
 
 def _load_module(name: str, path: Path) -> ModuleType:
@@ -66,22 +143,30 @@ def _load_env_file(repo_root: Path) -> None:
 
 _tools_dir = REPO_ROOT / "agent" / "src" / "personal_assistant_agent" / "tools"
 _vault_read = _load_module("pa_vault_read", _tools_dir / "vault_read.py")
-_linear_cli = _load_module("pa_linear_cli", _tools_dir / "linear_cli.py")
+# NOTE: linear_cli is NOT loaded via _load_module. It now imports pydantic and
+# personal_assistant_agent.memory.completion at module level, so standalone
+# loading would (a) crash if the package isn't installed, and (b) create a
+# second LinearError class object that substrate.refresh's `except LinearError`
+# would never catch. Import it from the package instead (single class identity).
 
 _load_env_file(REPO_ROOT)
-_linear = _linear_cli.LinearClient(repo_root=REPO_ROOT)
 
-# The proposal-emission helpers are real package modules (proposal_enqueue
-# imports personal_assistant_agent.models). The package __init__ is trivial
-# post-pivot, so putting agent/src on the path and importing them directly is
-# clean — no _load_module dance needed here.
+# The package __init__ is trivial post-pivot, so putting agent/src on the path
+# and importing directly is clean — no _load_module dance needed here.
 sys.path.insert(0, str(REPO_ROOT / "agent" / "src"))
 from personal_assistant_agent import google_calendar  # noqa: E402
+from personal_assistant_agent.memory import (  # noqa: E402
+    get_context as _memory_get_context,
+)
+from personal_assistant_agent.memory import refresh as _memory_refresh  # noqa: E402
+from personal_assistant_agent.tools.linear_cli import LinearClient  # noqa: E402
 from personal_assistant_agent.tools.proposal_enqueue import (  # noqa: E402
     ProposalCollisionError,
     build_proposal,
     enqueue,
 )
+
+_linear = LinearClient(repo_root=REPO_ROOT)
 
 mcp = FastMCP("pa-tools")
 
@@ -187,6 +272,58 @@ def linear_link(blocker: str, blocked: str) -> str:
 # --- Assistant-owned writes (briefings / digests — NOT user content) ---
 
 ASSISTANT_ROOT = "00 - Assistant"
+
+
+@mcp.tool()
+def memory_world_map() -> str:
+    """Authoritative map of the vault's folder taxonomy (PA-102 substrate).
+
+    Returns the folder list as JSON: exact paths, normalized lookup names,
+    note counts. USE THIS to resolve folder paths — never guess a numbered
+    folder like '06 - Learning' again; the map is the source of truth."""
+    ctx = _memory_get_context(VAULT_ROOT, assistant_root=ASSISTANT_ROOT)
+    return ctx.world_map_json()
+
+
+@mcp.tool()
+def memory_continuity(days: int = 2, project: str | None = None) -> str:
+    """Day-to-day continuity from the memory substrate (PA-102): what got
+    done and what changed over the last `days` days. Read this for
+    "yesterday, what got done" instead of re-deriving it. Pass `project`
+    to see only that Linear project's completions (e.g. "Personal" for the
+    daily briefing, which is personal-only; "Dev" for the dev briefing)."""
+    ctx = _memory_get_context(
+        VAULT_ROOT, days=days, assistant_root=ASSISTANT_ROOT,
+        project=project, now=_local_now(),
+    )
+    return ctx.continuity or "(no continuity recorded yet — run memory_refresh)"
+
+
+@mcp.tool()
+def memory_refresh() -> str:
+    """Refresh the memory substrate (PA-102): rebuild the vault world-map,
+    snapshot Linear issue states, detect completions, append a continuity
+    entry. Safe to run on every wake — completions surface exactly once.
+    Call this before composing a briefing/review when the substrate may be
+    stale."""
+    report = _memory_refresh(
+        VAULT_ROOT, _linear, projects=MEMORY_PROJECTS,
+        assistant_root=ASSISTANT_ROOT, now=_local_now(),
+    )
+    lines = [
+        f"world-map rebuilt: {report.world_map_built}",
+        f"projects snapshotted: {', '.join(report.projects_snapshotted) or '(none)'}",
+    ]
+    if report.completions:
+        lines.append("new completions:")
+        lines.extend(
+            f"  - [{c.project}] {c.identifier}: {c.title} → {c.state}"
+            for c in report.completions
+        )
+    else:
+        lines.append("new completions: none")
+    lines.extend(f"note: {n}" for n in report.notes)
+    return "\n".join(lines)
 
 
 @mcp.tool()

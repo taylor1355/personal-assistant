@@ -14,21 +14,29 @@ dispatch efficiently — but only with facts you actually pulled from tools.
 
 This is Taylor's **personal** briefing — his life-tasks + calendar. Assistant/dev
 issues (the PA-dev backlog) are **out of scope** here; they get a separate dev
-briefing. **You MUST call `today`, `calendar_read`, and `linear_personal` BEFORE
-writing anything.** Compose only from what the tools return; a section is
-"nothing today" ONLY when its tool genuinely returned nothing. Never invent
-tasks, dates, or events.
+briefing. **You MUST call `today`, `calendar_read`, `linear_personal`,
+`memory_refresh`, and `memory_world_map` BEFORE writing anything.** Compose only
+from what the tools return; a section is "nothing today" ONLY when its tool
+genuinely returned nothing. Never invent tasks, dates, events, or folder paths.
 
 Steps:
 
 1. `today` → the date; use it for the filename and any "today/this week" reasoning.
-2. `calendar_read` → today's events (read-only). "No events." = a clear day; a
+2. `memory_refresh` → rebuild the memory substrate (world-map, Linear snapshots,
+   completion detection). Then `memory_world_map` → the authoritative vault folder
+   taxonomy. **Resolve every vault path through the world-map** — never guess a
+   numbered folder; the map is the source of truth.
+3. `memory_continuity` (2 days, project "Personal") → what got done recently;
+   use it for a "recently completed" note and to avoid re-surfacing finished
+   items. This briefing is personal-only: the project filter keeps dev-backlog
+   completions out.
+4. `calendar_read` → today's events (read-only). "No events." = a clear day; a
    "not configured/failed" message → say the calendar is unavailable in one line.
    Never invent events.
-3. `linear_personal` → Taylor's life-tasks (the Personal project, grouped by
+5. `linear_personal` → Taylor's life-tasks (the Personal project, grouped by
    state). This is the backbone of the briefing; lead with what's due/overdue and
    time-sensitive.
-4. Optional: `vault_read` a note or two for context on a specific task. Do NOT
+6. Optional: `vault_read` a note or two for context on a specific task. Do NOT
    mine the `02 - Todos` lists — life-tasks live in Linear now.
 
 ## Compose
