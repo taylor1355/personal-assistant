@@ -11,9 +11,11 @@ Terminality is keyed off Linear's workflow-state *type* ("completed" /
 
 Snapshots are persisted to ``00 - Assistant/Memory/linear-snapshots.json``
 (atomically: tempfile + rename, so a killed refresh can't corrupt them).
-Journal/chat-detected completions (from the journal_agent's proposals) are
-recorded separately via the continuity log; this module covers the Linear
-side. Both feed the same continuity entries.
+
+``CompletionSource.JOURNAL`` is reserved for journal/chat-detected
+completions (from the journal_agent's proposals) — there is currently no
+producer; wiring it up is tracked as PA-141 (tech-debt). This module covers
+the Linear side only. Both feed the same continuity entries once wired.
 """
 from __future__ import annotations
 

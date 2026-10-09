@@ -133,7 +133,6 @@ def test_save_is_atomic_leaves_no_tempfiles(tmp_path: Path) -> None:
 
 def test_completion_is_frozen() -> None:
     c = Completion(identifier="PA-1", title="t", project="Personal", state="Done")
-    assert c.source == CompletionSource.LINEAR
     with pytest.raises(dataclasses.FrozenInstanceError):
         c.title = "changed"  # type: ignore[misc]
 

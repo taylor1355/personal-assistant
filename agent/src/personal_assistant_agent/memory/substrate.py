@@ -102,7 +102,10 @@ def refresh(
             states = {s.identifier: s for s in linear.project_states(project)}
         except LinearError as e:
             logger.warning("snapshot of %r failed: %s", project, e)
-            report.notes.append(f"snapshot of {project!r} failed: {e}")
+            # Tagged with the project so _filter_project can drop it for
+            # other-project readers (e.g. the personal briefing never sees
+            # Dev snapshot failures).
+            report.notes.append(f"[{project}] snapshot failed: {e}")
             continue
         new_snapshots[project] = states
         old = old_snapshots.get(project, {})

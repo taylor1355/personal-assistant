@@ -110,10 +110,11 @@ def read_recent_entries(
 
 
 def _filter_project(text: str, project: str) -> str:
-    """Drop completion lines tagged for a different project.
+    """Drop lines tagged for a different project.
 
-    Completion lines look like ``- [Dev] PA-1: ...``; everything else
-    (headers, notes) is kept.
+    Both completion lines (``- [Dev] PA-1: ...``) and project-tagged notes
+    (``- [Dev] snapshot failed: ...``) are dropped; everything else
+    (headers, untagged notes) is kept.
     """
     kept: list[str] = []
     for line in text.splitlines():
